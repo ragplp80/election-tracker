@@ -305,10 +305,12 @@ async function discover(onProgress){
 
 // ---------- Turning Kalshi events into races ----------
 function partyOf(m){
-  const suf=(m.ticker||"").split("-").pop();
-  if(suf==="D"||/democrat/i.test(m.yes_sub_title||""))return"D";
-  if(suf==="R"||/republican/i.test(m.yes_sub_title||""))return"R";
-  if(suf==="I"||/independent/i.test(m.yes_sub_title||""))return"I";
+  // Kalshi tags parties several ways: SENATETX-26-D, KXHOUSENC11-26-DEM / -GOP, or only in the label.
+  const suf=(m.ticker||"").split("-").pop().toUpperCase();
+  const lab=`${m.yes_sub_title||""} ${m.subtitle||""}`;
+  if(["D","DEM","DEMS"].includes(suf)||/democrat/i.test(lab))return"D";
+  if(["R","REP","GOP"].includes(suf)||/republican/i.test(lab))return"R";
+  if(["I","IND"].includes(suf)||/independent/i.test(lab))return"I";
   return"X";
 }
 function priceOf(m,prev){
