@@ -36,9 +36,10 @@ let RELAY=new URLSearchParams(location.search).get('relay');
 try{if(RELAY)localStorage.setItem('relay',RELAY);else RELAY=localStorage.getItem('relay')}catch(e){}
 const API=(RELAY?RELAY.replace(/\/+$/,''):'https://election-tracker.m4rf2jgjwt.workers.dev');
 const checks=document.getElementById('checks');
-const report={version:'v3-relay',api:API,ranAt:new Date().toISOString(),ua:navigator.userAgent,steps:{}};
+const report={version:'v4-retry',api:API,ranAt:new Date().toISOString(),ua:navigator.userAgent,steps:{}};
 function line(label,ok,detail){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${label}</span><span class="${ok?'ok':'bad'}">${ok?'OK':'Failed'} <span class="muted">${detail||''}</span></span>`;checks.appendChild(d)}
-async function get(path){const r=await fetch(API+path,{headers:{accept:'application/json'}});if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+const attempts=[];
+async function get(path){await new Promise(r=>setTimeout(r,500));const r=await fetch(API+path,{headers:{accept:'application/json'}});attempts.push([path.slice(0,40),r.status,r.headers.get('x-relay-attempts'),r.headers.get('x-relay-cache')]);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 function slim(o,depth=0){ // keep structure, shorten arrays
   if(Array.isArray(o))return o.slice(0,2).map(x=>slim(x,depth+1));
   if(o&&typeof o==='object'){const n={};for(const k in o){const v=o[k];n[k]=typeof v==='string'&&v.length>120?v.slice(0,120)+'…':slim(v,depth+1)}return n}
@@ -53,8 +54,8 @@ async function step(name,fn){
   const basic=await step('Reach Kalshi from this browser',async()=>{const j=await get('/exchange/status');return{status:j}});
   if(!basic){document.getElementById('sample').textContent='Blocked. The browser could not read Kalshi directly, so we will need the relay fallback.';}
   else{
-    const re=/senate|house|governor|gubernatorial|control|congress/i;
-    for(const cat of ['Elections','Politics']){
+    const re=/senate|house|governor|gubernatorial|control|congress|district|midterm/i;
+    for(const cat of ['Elections']){
       await step('List '+cat+' series',async()=>{
         const j=await get('/series?category='+encodeURIComponent(cat));
         const all=j.series||[];
@@ -89,7 +90,7 @@ async function step(name,fn){
       document.getElementById('sample').innerHTML=m.length?m.map(x=>`<div class="row"><span>${x.title||x.ticker}</span><span>${x.yes_bid_dollars??x.yes_bid??'?'} / ${x.yes_ask_dollars??x.yes_ask??'?'} · last ${x.last_price_dollars??x.last_price??'?'}</span></div>`).join(''):'No markets returned for the control tickers I guessed. The report will show the right ones.';
     }catch(e){document.getElementById('sample').textContent='Sample failed: '+e}
   }
-  const txt=JSON.stringify(report);
+  report.calls=attempts;const txt=JSON.stringify(report);
   const ta=document.getElementById('report');ta.value=txt;
   const b=document.getElementById('copy');b.disabled=false;
   b.onclick=async()=>{try{await navigator.clipboard.writeText(txt);document.getElementById('copied').textContent='Copied '+Math.round(txt.length/1024)+' KB. Paste it into the chat.'}catch(e){ta.select();document.getElementById('copied').textContent='Copy failed. Select all in the box below and copy.'}};
