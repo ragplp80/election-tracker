@@ -115,6 +115,29 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:grid;gap:4px}
 footer a{color:var(--muted)}
 .err{color:var(--rep)}
 
+/* Race detail sheet */
+.row[data-id],.ctl[data-id]{cursor:pointer}
+.row[data-id]:hover{background:var(--surface2)}
+.row[data-id]:focus-visible,.ctl[data-id]:focus-visible{outline:2px solid var(--move);outline-offset:-2px}
+.sheet-bg{position:fixed;inset:0;background:rgba(5,9,14,.62);z-index:20;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.sheet{background:var(--surface);border:1px solid var(--line);border-radius:14px;width:min(860px,100%);max-height:100%;overflow:auto;padding:16px 18px 18px;display:grid;gap:12px}
+.sheet-top{display:flex;align-items:flex-start;gap:12px}
+.sheet-top h3{margin:0;font-size:22px;font-weight:800;font-variation-settings:"wdth" 80;line-height:1.1}
+.sheet-top span{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.sheet-top .x{margin-left:auto;border:1px solid var(--line);background:var(--surface2);border-radius:8px;width:38px;height:38px;font-size:20px;line-height:1}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px}
+.leg{display:grid;gap:1px;min-width:0}
+.leg b{font-size:26px;font-weight:800;font-variation-settings:"wdth" 80;line-height:1}
+.leg span{font-size:12.5px;font-weight:600}
+.leg small{font-size:12px;color:var(--muted)}
+.readout{font-size:12.5px;color:var(--muted);min-height:18px}
+.readout b{color:var(--fg)}
+.chartbox{position:relative;touch-action:pan-y}
+.chartbox svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:none}
+.chartmsg{padding:70px 0;text-align:center;color:var(--muted)}
+.sheet-meta{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted)}
+.sheet-meta b{color:var(--fg);font-weight:600}
+
 /* Narrow screens: rows become cards */
 @media (max-width:980px){
   .strip{grid-template-columns:1fr 1fr}
@@ -127,7 +150,7 @@ footer a{color:var(--muted)}
   .row .c,.row .heldcell{display:none}
   .row .mobilemoves{display:flex!important;grid-column:1/-1;gap:14px;font-size:12.5px;color:var(--muted)}
 }
-@media (max-width:560px){ .strip{grid-template-columns:1fr} .big{font-size:28px} }
+@media (max-width:560px){ .strip{grid-template-columns:1fr} .big{font-size:28px} .sheet-bg{align-items:flex-end;padding:0} .sheet{border-radius:14px 14px 0 0;padding-bottom:max(18px,env(safe-area-inset-bottom,0px))} }
 .mobilemoves{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -319,7 +342,7 @@ function buildRace(meta,ev){
   else if(meta.type==="house"){label=st+"-"+(meta.dist?meta.dist:"AL");sub="House"+(meta.special?" special":"")}
   else{label=meta.type==="ctlS"?"Senate control":"House control";sub=""}
   return{id:ev.event_ticker,type:meta.type,st,dist:meta.dist,label,sub,outs,
-    key:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,
+    key:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,series:meta.series,
     leader:outs[0],d,d24,vol24:outs.reduce((s,o)=>s+o.vol24,0),
     trump:(meta.type==="senate"||meta.type==="gov")?TRUMP24[st]??null:null,
     polls:POLLS[st]??null,
@@ -399,6 +422,7 @@ function oddsCell(r){
 function renderControl(elId,title,r){
   const el=$(elId);
   if(!r){el.innerHTML=`<h2>${title}</h2><div class="empty" style="padding:8px">No market found</div>`;return}
+  el.dataset.id=r.id;el.setAttribute("role","button");el.tabIndex=0;
   el.innerHTML=`<h2>${title}</h2>
     <div class="ctlnums"><div class="big d num">${fmtPct(r.d)}<small>DEM</small></div><div class="big r num">${fmtPct(1-r.d)}<small>REP</small></div></div>
     <div class="splitbar"><i class="d" style="width:${r.d*100}%"></i><i class="r" style="width:${(1-r.d)*100}%"></i></div>
@@ -442,7 +466,7 @@ function render(){
   const rows=list.map(r=>{
     const hot=r.flags.some(f=>f.k==="move"||f.k==="upset"||f.k==="flip");
     const color=r.d!=null?(r.d>=0.5?"var(--dem)":"var(--rep)"):"var(--ind)";
-    return`<div class="row${hot?" hot":""}">
+    return`<div class="row${hot?" hot":""}" data-id="${esc(r.id)}" role="button" tabindex="0" aria-label="${esc(r.label+" "+r.sub)}: open chart">
       <div class="race"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></div>
       <div class="heldcell">${heldBadge(r.held)}</div>
       <div class="odds">${oddsCell(r)}</div>
@@ -543,6 +567,7 @@ async function refresh(){
     if(!goingIn||goingIn.date!==etDate())captureBaseline(false);
     for(const r of races.values())metrics(r);
     render();
+    if(detail){renderDetailMeta();if(detail.range==="1h"||detail.range==="6h")loadDetail()}
   }catch(e){
     $("updated").innerHTML=`<span class="err">Couldn't reach Kalshi (${esc(e.message)}). Will try again.</span>`;
   }finally{
@@ -551,6 +576,126 @@ async function refresh(){
   }
 }
 let lastSecs=null;
+
+// ---------- Race detail: price history chart ----------
+const RANGES=[
+  {k:"1h",label:"1H",secs:3600,period:1},
+  {k:"6h",label:"6H",secs:6*3600,period:1},
+  {k:"1d",label:"1D",secs:86400,period:1},
+  {k:"1w",label:"1W",secs:7*86400,period:60},
+  {k:"1m",label:"1M",secs:30*86400,period:60},
+  {k:"all",label:"All",secs:2*365*86400,period:1440}];
+let detail=null; // {id, range, series:[{o,color,pts}], token}
+const partyColor=(o,i)=>o.party==="D"?"var(--dem)":o.party==="R"?"var(--rep)":(i%2?"var(--muted)":"var(--ind)");
+function candleValue(c){
+  const b=num(c.yes_bid?.close_dollars),a=num(c.yes_ask?.close_dollars),p=num(c.price?.close_dollars);
+  if(b!=null&&a!=null&&a>0&&a-b<=0.1)return(a+b)/2;
+  return p??(b!=null&&a!=null?(a+b)/2:null);
+}
+function openDetail(id){
+  const r=races.get(id);if(!r)return;
+  detail={id,range:store.get("et.range","1d"),series:null,token:0,lastFocus:document.activeElement};
+  const bg=document.createElement("div");bg.className="sheet-bg";bg.id="sheetBg";
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-top"><div><h3 id="sheetTitle">${esc(r.label)}</h3><span>${esc(r.sub||"Chamber control")}</span></div><button class="x" id="sheetClose" aria-label="Close">×</button></div>
+    <div class="legend" id="sheetLegend"></div>
+    <div class="seg" id="rangeSeg" style="justify-self:start">${RANGES.map(x=>`<button data-v="${x.k}" aria-pressed="${x.k===detail.range}">${x.label}</button>`).join("")}</div>
+    <div class="readout num" id="readout">Drag across the chart to read exact odds.</div>
+    <div class="chartbox" id="chartbox"><div class="chartmsg">Loading price history…</div></div>
+    <div class="sheet-meta num" id="sheetMeta"></div>
+  </div>`;
+  document.body.appendChild(bg);document.body.style.overflow="hidden";
+  bg.addEventListener("click",e=>{if(e.target===bg)closeDetail()});
+  $("sheetClose").onclick=closeDetail;$("sheetClose").focus();
+  $("rangeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;detail.range=v;store.set("et.range",v);setPressed("rangeSeg",v);loadDetail()};
+  renderDetailMeta();loadDetail();
+}
+function closeDetail(){
+  const bg=$("sheetBg");if(bg)bg.remove();document.body.style.overflow="";
+  const f=detail?.lastFocus;detail=null;if(f&&f.focus)f.focus();
+}
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&detail)closeDetail();
+  if((e.key==="Enter"||e.key===" ")&&!detail){const t=e.target.closest?.("[data-id]");if(t&&(t.classList.contains("row")||t.classList.contains("ctl"))){e.preventDefault();openDetail(t.dataset.id)}}
+});
+function detailOutcomes(r){
+  // The two leading candidates, plus anyone else above 5%
+  return r.outs.filter((o,i)=>i<2||o.p>=0.05).slice(0,4);
+}
+function renderDetailMeta(){
+  if(!detail)return;const r=races.get(detail.id);if(!r)return;
+  const outs=detailOutcomes(r);
+  $("sheetLegend").innerHTML=outs.map((o,i)=>{
+    const c=partyColor(o,i);const chg=detail.series?.find(s=>s.o.ticker===o.ticker);
+    const first=chg?.pts?.[0]?.[1];const delta=first!=null?o.p-first:null;
+    const rangeLabel=RANGES.find(x=>x.k===detail.range).label;
+    return`<div class="leg"><b class="num" style="color:${c}">${fmtPct(o.p)}</b><span style="color:${c}">${esc(o.name)}${o.party!=="X"?` (${o.party})`:""}</span><small class="num">${delta!=null?(delta>=0?"+":"−")+Math.abs(delta*100).toFixed(1)+" pts over "+rangeLabel:" "}</small></div>`}).join("");
+  const parts=[];
+  if(r.held&&r.held!=="new")parts.push(`Held by <b>${r.held}</b>`);
+  if(r.pickup)parts.push(`<b>${r.pickup} pickup</b> if the favorite wins`);
+  if(r.trump!=null)parts.push(`Trump '24 <b>${fmtMargin(r.trump)}</b>`);
+  if(r.polls!=null)parts.push(`Polls close <b>${fmtClock(r.polls)} ET</b>`);
+  parts.push(`24h volume <b>${fmtVol(r.vol24)}</b>`);
+  $("sheetMeta").innerHTML=parts.map(x=>`<span>${x}</span>`).join("");
+}
+async function loadDetail(){
+  const r=races.get(detail.id);if(!r)return;
+  const token=++detail.token;const rg=RANGES.find(x=>x.k===detail.range);
+  const end=Math.floor(Date.now()/1000),start=end-rg.secs;
+  $("chartbox").innerHTML='<div class="chartmsg">Loading price history…</div>';
+  const outs=detailOutcomes(r);
+  try{
+    const series=await Promise.all(outs.map(async(o,i)=>{
+      const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${rg.period}`);
+      const pts=(j.candlesticks||[]).map(c=>[c.end_period_ts*1000,candleValue(c)]).filter(p=>p[1]!=null);
+      // End the line at the live price so it matches the table
+      pts.push([Date.now(),o.p]);
+      return{o,color:partyColor(o,i),pts};
+    }));
+    if(!detail||token!==detail.token)return;
+    detail.series=series;renderDetailMeta();drawChart();
+  }catch(e){
+    if(detail&&token===detail.token)$("chartbox").innerHTML=`<div class="chartmsg err">Couldn't load price history (${esc(e.message)}). Try another range.</div>`;
+  }
+}
+function drawChart(){
+  const box=$("chartbox");if(!box||!detail?.series)return;
+  const series=detail.series.filter(s=>s.pts.length>1);
+  if(!series.length){box.innerHTML='<div class="chartmsg">No trades in this period. Try a longer range.</div>';return}
+  const W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(320,Math.max(220,W*0.42)));
+  const L=38,R=12,T=10,B=26,iw=W-L-R,ih=H-T-B;
+  let t0=Infinity,t1=-Infinity;for(const s of series)for(const p of s.pts){t0=Math.min(t0,p[0]);t1=Math.max(t1,p[0])}
+  if(t1-t0<60e3)t0=t1-60e3;
+  const X=t=>L+((t-t0)/(t1-t0))*iw,Y=v=>T+(1-v)*ih;
+  const span=t1-t0;
+  const fmtT=t=>{const d=new Date(t);return span<=36*3600e3?d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}):d.toLocaleDateString([], {month:"short",day:"numeric"})};
+  let g="";
+  for(const v of [0,.25,.5,.75,1]){const y=Y(v);g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1" ${v===.5?'stroke-dasharray="4 3"':""}/><text x="${L-6}" y="${y+4}" text-anchor="end" font-size="11" fill="var(--muted)">${v*100}%</text>`}
+  const ticks=W<500?3:5;
+  for(let i=0;i<=ticks;i++){const t=t0+span*i/ticks,x=X(t);g+=`<text x="${x}" y="${H-6}" text-anchor="${i===0?"start":i===ticks?"end":"middle"}" font-size="11" fill="var(--muted)">${esc(fmtT(t))}</text>`}
+  let lines="";
+  for(const s of series){
+    const d=s.pts.map((p,i)=>(i?"L":"M")+X(p[0]).toFixed(1)+" "+Y(p[1]).toFixed(1)).join("");
+    const last=s.pts[s.pts.length-1];
+    lines+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${X(last[0])}" cy="${Y(last[1])}" r="3.5" fill="${s.color}"/>`;
+  }
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Win probability over time">${g}${lines}<g id="cross" visibility="hidden"><line id="crossL" y1="${T}" y2="${T+ih}" stroke="var(--fg)" stroke-width="1" stroke-opacity=".5"/>${series.map((s,i)=>`<circle id="crossD${i}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`).join("")}</g><rect x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent" id="hit"/></svg>`;
+  const svg=box.querySelector("svg"),hit=box.querySelector("#hit");
+  const valueAt=(pts,t)=>{let best=pts[0];for(const p of pts){if(p[0]<=t)best=p;else break}return best};
+  const show=ev=>{
+    const rect=svg.getBoundingClientRect();const x=(ev.clientX-rect.left)*(W/rect.width);
+    const t=t0+Math.min(1,Math.max(0,(x-L)/iw))*(t1-t0);
+    $("cross").setAttribute("visibility","visible");$("crossL").setAttribute("x1",X(t));$("crossL").setAttribute("x2",X(t));
+    const vals=series.map((s,i)=>{const p=valueAt(s.pts,t);$("crossD"+i).setAttribute("cx",X(t));$("crossD"+i).setAttribute("cy",Y(p[1]));return`<b style="color:${s.color}">${esc(s.o.name)} ${fmtPct(p[1])}</b>`});
+    const d=new Date(t);
+    $("readout").innerHTML=`${esc(d.toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))} · ${vals.join(" · ")}`;
+  };
+  const hide=()=>{$("cross").setAttribute("visibility","hidden");$("readout").textContent="Drag across the chart to read exact odds."};
+  hit.addEventListener("pointerdown",e=>{show(e)});
+  hit.addEventListener("pointermove",show);
+  hit.addEventListener("pointerleave",hide);
+}
+window.addEventListener("resize",()=>{if(detail?.series)drawChart()});
 
 // ---------- Auto refresh, wake lock, controls ----------
 let timer=null,nextAt=null,wake=null;
@@ -568,6 +713,8 @@ document.addEventListener("visibilitychange",()=>{
 function setPressed(seg,v){for(const b of $(seg).querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.v===v)}
 function saveUi(){store.set("et.ui",ui)}
 $("refresh").onclick=refresh;
+$("table").addEventListener("click",e=>{const row=e.target.closest(".row[data-id]");if(row)openDetail(row.dataset.id)});
+for(const id of ["ctlS","ctlH"])$(id).addEventListener("click",()=>{const d=$(id).dataset.id;if(d)openDetail(d)});
 $("auto").onclick=()=>{ui.auto=!ui.auto;$("auto").setAttribute("aria-pressed",ui.auto);saveUi();keepAwake(ui.auto);if(ui.auto&&!busy)refresh();else schedule();renderStatus()};
 $("compet").onclick=()=>{ui.compet=!ui.compet;$("compet").setAttribute("aria-pressed",ui.compet);saveUi();render()};
 $("sortSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.sort=v;setPressed("sortSeg",v);saveUi();render()};
