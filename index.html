@@ -453,7 +453,7 @@ function render(){
 }
 function renderStatus(){
   const t=lastOk?lastOk.toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"}):"–";
-  let s=`Updated <b>${t}</b>`;
+  let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s${lastMode==="fast"?", fast":""})</span>`:""}`;
   if(errCount)s+=` · <span class="err">${errCount} race${errCount>1?"s":""} didn't load</span>`;
   if(ui.auto&&nextAt)s+=` · next in <b class="num" id="cd">${Math.max(0,Math.round((nextAt-Date.now())/1000))}s</b>`;
   $("updated").innerHTML=s;
@@ -476,28 +476,62 @@ function askConfirm(){ // two-tap confirm, since dialogs are blocked in some vie
   b.dataset.armed="1";b.textContent="Tap again to reset to now";clearTimeout(confirmTimer);
   confirmTimer=setTimeout(renderStatus,4000);return false;
 }
+// Fast path: after one full sweep we know every market ticker, so later refreshes ask Kalshi
+// for all of them in a few batched calls. A full per-race sweep still runs every 10th refresh
+// (to catch new markets) and whenever a batch comes back incomplete.
+let eventMeta=new Map(),marketTickers=[],refreshN=0,batchOK=store.get("et.batchOK",true),lastMode="";
+async function fullSweep(prog){
+  const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true&status=open`);return{meta,events:j.events||[]}},prog);
+  const out=[];let errs=0;eventMeta=new Map();const tk=[];
+  for(const x of res){
+    if(!x||x.error){errs++;continue}
+    for(const ev of x.events){eventMeta.set(ev.event_ticker,x.meta);for(const m of ev.markets||[])if(m.status!=="finalized")tk.push(m.ticker);out.push({meta:x.meta,ev})}
+  }
+  marketTickers=tk;
+  return{out,errs};
+}
+async function batchSweep(prog){
+  const chunks=[];for(let i=0;i<marketTickers.length;i+=40)chunks.push(marketTickers.slice(i,i+40));
+  const res=await pool(chunks,4,c=>kget(`/markets?tickers=${c.join(",")}&limit=1000`),prog);
+  const byEvent=new Map();let got=0,errs=0;
+  for(const j of res){
+    if(!j||j.error){errs++;continue}
+    for(const m of j.markets||[]){got++;if(!byEvent.has(m.event_ticker))byEvent.set(m.event_ticker,[]);byEvent.get(m.event_ticker).push(m)}
+  }
+  if(errs||got<marketTickers.length*0.9)return null;   // incomplete: caller falls back to a full sweep
+  const out=[];for(const [et,markets] of byEvent){const meta=eventMeta.get(et);if(meta)out.push({meta,ev:{event_ticker:et,markets}})}
+  return{out,errs:0};
+}
 async function refresh(){
   if(busy)return;busy=true;$("refresh").disabled=true;$("refresh").textContent="Updating…";
   const prog=(d,n)=>{$("prog").style.width=(d/n*100)+"%"};
+  const t0=performance.now();
   try{
     if(!series.length){
       $("loading")&&($("loading").textContent="Finding every Senate, governor and House market on Kalshi…");
       series=await discover(prog);
     }
-    const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true&status=open`);return{meta,events:j.events||[]}},prog);
+    let result=null;
+    if(batchOK&&marketTickers.length&&refreshN%10!==0){
+      result=await batchSweep(prog);
+      if(!result){batchOK=false;store.set("et.batchOK",false)}
+      else lastMode="fast";
+    }
+    if(!result){result=await fullSweep(prog);lastMode="full";
+      if(!store.get("et.batchOK",true)&&refreshN%10===0){batchOK=true;store.set("et.batchOK",true)} }  // give batching another chance now and then
+    refreshN++;
     // Remember the previous refresh for "Last" moves and lead flips
     for(const r of races.values()){prevSnap.set(r.id,val(r));prevSnap.set(r.id+":leader",r.leader.party+r.leader.name)}
-    errCount=0;const now=Date.now();
-    for(const x of res){
-      if(!x||x.error){errCount++;continue}
-      for(const ev of x.events){const r=buildRace(x.meta,ev);if(!r)continue;races.set(r.id,r);
-        (history[r.id]=history[r.id]||[]).push([now,val(r)]);
-        if(history[r.id].length>400)history[r.id]=history[r.id].slice(-400);}
+    errCount=result.errs;const now=Date.now();
+    for(const {meta,ev} of result.out){
+      const r=buildRace(meta,ev);if(!r)continue;races.set(r.id,r);
+      (history[r.id]=history[r.id]||[]).push([now,val(r)]);
+      if(history[r.id].length>400)history[r.id]=history[r.id].slice(-400);
     }
-    // Drop history older than 12 hours and races no longer listed
+    // Drop history older than 12 hours
     const cutoff=now-12*3600e3;for(const k in history){history[k]=history[k].filter(p=>p[0]>=cutoff);if(!history[k].length)delete history[k]}
     store.set("et.history",history);
-    lastOk=new Date();
+    lastOk=new Date();lastSecs=((performance.now()-t0)/1000).toFixed(1);
     if(!goingIn||goingIn.date!==etDate())captureBaseline(false);
     for(const r of races.values())metrics(r);
     render();
@@ -508,6 +542,7 @@ async function refresh(){
     schedule();renderStatus();
   }
 }
+let lastSecs=null;
 
 // ---------- Auto refresh, wake lock, controls ----------
 let timer=null,nextAt=null,wake=null;
