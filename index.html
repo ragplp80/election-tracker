@@ -315,6 +315,7 @@ function buildRace(meta,ev){
   else if(meta.type==="house"){label=st+"-"+(meta.dist?meta.dist:"AL");sub="House"+(meta.special?" special":"")}
   else{label=meta.type==="ctlS"?"Senate control":"House control";sub=""}
   return{id:ev.event_ticker,type:meta.type,st,dist:meta.dist,label,sub,outs,
+    key:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,
     leader:outs[0],d,d24,vol24:outs.reduce((s,o)=>s+o.vol24,0),
     trump:(meta.type==="senate"||meta.type==="gov")?TRUMP24[st]??null:null,
     polls:POLLS[st]??null,
@@ -405,7 +406,10 @@ function render(){
   const ctlS=all.find(r=>r.type==="ctlS"&&/-2026$/.test(r.id))||all.find(r=>r.type==="ctlS");
   const ctlH=all.find(r=>r.type==="ctlH"&&/-2026$/.test(r.id))||all.find(r=>r.type==="ctlH");
   renderControl("ctlS","Senate control",ctlS);renderControl("ctlH","House control",ctlH);
-  let list=all.filter(r=>!r.type.startsWith("ctl"));
+  // When Kalshi has more than one market for the same race, show only the most-traded one.
+  const best=new Map();
+  for(const r of all){if(r.type.startsWith("ctl"))continue;const b=best.get(r.key);if(!b||r.vol24>b.vol24)best.set(r.key,r)}
+  let list=[...best.values()];
   $("nUpset").textContent=list.filter(r=>r.flags.some(f=>f.k==="upset")).length;
   $("nMove").textContent=list.filter(r=>r.flags.some(f=>f.k==="move")).length;
   $("nCall").textContent=list.filter(r=>r.flags.some(f=>f.k==="call")).length;
