@@ -299,7 +299,11 @@ function dProbOf(outs,key){
   if(pd!=null)return pd; if(pr!=null)return 1-pr;
   return null;
 }
+// Only this year's races: Kalshi names 2026 state races like SENATETX-26 and control markets like CONTROLS-2026.
+// Off-year races (e.g. Kentucky governor, 2027) are listed too, so they are filtered out here.
+const is2026=(meta,ev)=>meta.type.startsWith("ctl")?/-2026\b/.test(ev.event_ticker):/-26(\b|[A-Z])/.test(ev.event_ticker);
 function buildRace(meta,ev){
+  if(!is2026(meta,ev))return null;
   const outs=(ev.markets||[]).filter(m=>m.status!=="finalized").map(m=>({
     ticker:m.ticker,party:partyOf(m),
     name:(m.yes_sub_title||m.subtitle||m.ticker).replace(/ Party$/,""),
