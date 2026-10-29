@@ -36,7 +36,7 @@ let RELAY=new URLSearchParams(location.search).get('relay');
 try{if(RELAY)localStorage.setItem('relay',RELAY);else RELAY=localStorage.getItem('relay')}catch(e){}
 const API=(RELAY?RELAY.replace(/\/+$/,''):'https://election-tracker.m4rf2jgjwt.workers.dev');
 const checks=document.getElementById('checks');
-const report={ranAt:new Date().toISOString(),ua:navigator.userAgent,steps:{}};
+const report={version:'v3-relay',api:API,ranAt:new Date().toISOString(),ua:navigator.userAgent,steps:{}};
 function line(label,ok,detail){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${label}</span><span class="${ok?'ok':'bad'}">${ok?'OK':'Failed'} <span class="muted">${detail||''}</span></span>`;checks.appendChild(d)}
 async function get(path){const r=await fetch(API+path,{headers:{accept:'application/json'}});if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 function slim(o,depth=0){ // keep structure, shorten arrays
