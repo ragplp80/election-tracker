@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Election Night">
-<title>Election Night Tracker</title>
+<meta name="apple-mobile-web-app-title" content="Live Odds">
+<title>Live Odds Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
@@ -158,7 +158,7 @@ footer a{color:var(--muted)}
 </head>
 <body>
 <header>
-  <h1><small>Kalshi live odds</small>Election Night Tracker</h1>
+  <h1><small>2026 midterms</small>Live Odds Tracker</h1>
   <div class="hstatus">
     <span id="updated">Loading markets…</span>
     <span id="baseline"></span>
@@ -209,14 +209,14 @@ footer a{color:var(--muted)}
   <div class="row head">
     <div>Race</div><div>Held</div><div>Odds now</div><div class="rt">Last</div><div class="rt">15 min</div><div class="rt">Going in</div><div class="rt">24 h</div><div class="rt">24h vol</div><div class="rt">Trump '24</div><div class="rt">Polls</div><div class="rt">Trend · flags</div>
   </div>
-  <div class="empty" id="loading">Finding every Senate, governor and House market on Kalshi. The first load takes about 30 seconds.</div>
+  <div class="empty" id="loading">Loading every Senate, governor and House race. The first load takes about 30 seconds.</div>
 </div>
 
 <footer>
   <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability: <span class="up">blue</span> means toward the Democrat, <span class="down">red</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
   <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that redrew or are fighting over their district lines for 2026.</div>
   <div>Trump '24 is the 2024 presidential margin in the state (R+ or D+, rounded). Left off for House races because several states redrew districts for 2026. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
-  <div>Data: Kalshi public market data via this site's relay, cached about 15 seconds. <a href="test.html">Connection test</a></div>
+  <div>Odds update about every 15 seconds.</div>
 </footer>
 
 <script>
@@ -553,7 +553,7 @@ async function refresh(){
   const t0=performance.now();
   try{
     if(!series.length){
-      $("loading")&&($("loading").textContent="Finding every Senate, governor and House market on Kalshi…");
+      $("loading")&&($("loading").textContent="Loading every Senate, governor and House race…");
       series=await discover(prog);
     }
     let result=null;
@@ -582,7 +582,7 @@ async function refresh(){
     render();
     if(detail){renderDetailMeta();if(detail.range==="1h"||detail.range==="6h")loadDetail()}
   }catch(e){
-    $("updated").innerHTML=`<span class="err">Couldn't reach Kalshi (${esc(e.message)}). Will try again.</span>`;
+    $("updated").innerHTML=`<span class="err">Couldn't load the latest odds (${esc(e.message)}). Will try again.</span>`;
   }finally{
     busy=false;$("refresh").disabled=false;$("refresh").textContent="Refresh";$("prog").style.width="0";
     schedule();renderStatus();
