@@ -10,6 +10,7 @@
   body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,system-ui,sans-serif;padding:24px max(16px,env(safe-area-inset-left))}
   main{max-width:760px;margin:0 auto;display:grid;gap:16px}
   h1{font-size:22px;margin:0}
+  h2{font-size:15px;margin:0 0 6px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
   .row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}
   .row:last-child{border-bottom:0}
@@ -21,9 +22,9 @@
 <body>
 <main>
   <h1>Election Tracker: connection test</h1>
-  <p class="muted">Checks whether this page can read Kalshi directly, and maps the election markets. When it finishes, tap <b>Copy report</b> and paste it back to Claude.</p>
-  <div class="card" id="checks"></div>
-  <div class="card" id="prices"><b>Live sample prices</b><div id="sample" class="muted">Loading…</div></div>
+  <p class="muted">Tests each data route for live election prices. When it finishes, tap <b>Copy report</b> and paste it back to Claude.</p>
+  <div class="card"><h2 id="kalshiTitle">Kalshi</h2><div id="kalshi"></div></div>
+  <div class="card"><h2>Polymarket (direct, no relay)</h2><div id="poly"></div></div>
   <div class="card">
     <button id="copy" disabled>Copy report</button>
     <p id="copied" class="muted"></p>
@@ -31,66 +32,79 @@
   </div>
 </main>
 <script>
-// Use the relay if one is given as ?relay=https://... (remembered on this device).
-let RELAY=new URLSearchParams(location.search).get('relay');
-try{if(RELAY)localStorage.setItem('relay',RELAY);else RELAY=localStorage.getItem('relay')}catch(e){}
-const API=(RELAY?RELAY.replace(/\/+$/,''):'https://election-tracker.m4rf2jgjwt.workers.dev');
-const checks=document.getElementById('checks');
-const report={version:'v4-retry',api:API,ranAt:new Date().toISOString(),ua:navigator.userAgent,steps:{}};
-function line(label,ok,detail){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${label}</span><span class="${ok?'ok':'bad'}">${ok?'OK':'Failed'} <span class="muted">${detail||''}</span></span>`;checks.appendChild(d)}
-const attempts=[];
-async function get(path){await new Promise(r=>setTimeout(r,500));const r=await fetch(API+path,{headers:{accept:'application/json'}});attempts.push([path.slice(0,40),r.status,r.headers.get('x-relay-attempts'),r.headers.get('x-relay-cache')]);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
-function slim(o,depth=0){ // keep structure, shorten arrays
-  if(Array.isArray(o))return o.slice(0,2).map(x=>slim(x,depth+1));
-  if(o&&typeof o==='object'){const n={};for(const k in o){const v=o[k];n[k]=typeof v==='string'&&v.length>120?v.slice(0,120)+'…':slim(v,depth+1)}return n}
+const VERSION='v5-vercel';
+const onVercel=location.hostname.endsWith('vercel.app');
+const CF='https://election-tracker.m4rf2jgjwt.workers.dev';
+const route=onVercel?'vercel':'cloudflare';
+const kalshiUrl=p=>onVercel?'/api/kalshi?path='+encodeURIComponent(p):CF+p;
+document.getElementById('kalshiTitle').textContent='Kalshi via '+(onVercel?'Vercel relay':'Cloudflare relay');
+
+const report={version:VERSION,route,host:location.hostname,ranAt:new Date().toISOString(),ua:navigator.userAgent,kalshi:{},poly:{},calls:[]};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function line(box,label,ok,detail){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${label}</span><span class="${ok?'ok':'bad'}">${ok?'OK':'Failed'} <span class="muted">${detail||''}</span></span>`;document.getElementById(box).appendChild(d)}
+async function getJSON(url,tag){
+  await sleep(300);
+  const r=await fetch(url,{headers:{accept:'application/json'}});
+  report.calls.push([tag,url.slice(0,70),r.status,r.headers.get('x-relay-attempts')]);
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json();
+}
+function slim(o){
+  if(Array.isArray(o))return o.slice(0,2).map(slim);
+  if(o&&typeof o==='object'){const n={};for(const k in o){const v=o[k];n[k]=typeof v==='string'&&v.length>100?v.slice(0,100)+'…':slim(v)}return n}
   return o;
 }
-async function step(name,fn){
+async function step(box,store,name,fn){
   const t=performance.now();
-  try{const res=await fn();report.steps[name]={ok:true,ms:Math.round(performance.now()-t),...res};line(name,true,Math.round(performance.now()-t)+' ms');return res}
-  catch(e){report.steps[name]={ok:false,error:String(e)};line(name,false,String(e));return null}
+  try{const res=await fn();const ms=Math.round(performance.now()-t);report[store][name]={ok:true,ms,...res};line(box,name,true,ms+' ms');return res}
+  catch(e){report[store][name]={ok:false,error:String(e)};line(box,name,false,String(e));return null}
 }
+
+async function kalshi(){
+  const k=(p)=>getJSON(kalshiUrl(p),'kalshi');
+  await step('kalshi','kalshi','Exchange status',async()=>({status:(await k('/exchange/status')).exchange_active}));
+  await step('kalshi','kalshi','Senate control',async()=>{const j=await k('/events?series_ticker=CONTROLS&with_nested_markets=true&status=open');return{events:(j.events||[]).length,sample:slim((j.events||[])[0])}});
+  await step('kalshi','kalshi','House control',async()=>{const j=await k('/events?series_ticker=CONTROLH&with_nested_markets=true&status=open');return{events:(j.events||[]).length,markets:((j.events||[])[0]?.markets||[]).map(m=>[m.ticker,m.yes_sub_title||m.subtitle,m.last_price_dollars??m.last_price])}});
+  await step('kalshi','kalshi','Texas Senate',async()=>{const j=await k('/events?series_ticker=SENATETX&with_nested_markets=true&status=open');return{events:(j.events||[]).map(e=>e.event_ticker),markets:((j.events||[])[0]?.markets||[]).map(m=>[m.ticker,m.yes_sub_title||m.subtitle,m.last_price_dollars??m.last_price,m.volume_fp??m.volume])}});
+  await step('kalshi','kalshi','Arizona Governor',async()=>{const j=await k('/events?series_ticker=GOVPARTYAZ&with_nested_markets=true&status=open');return{events:(j.events||[]).map(e=>e.event_ticker),markets:((j.events||[])[0]?.markets||[]).map(m=>[m.ticker,m.yes_sub_title||m.subtitle,m.last_price_dollars??m.last_price])}});
+  await step('kalshi','kalshi','PA-7 House',async()=>{const j=await k('/events?series_ticker=HOUSEPA7&with_nested_markets=true&status=open');return{events:(j.events||[]).map(e=>e.event_ticker),markets:((j.events||[])[0]?.markets||[]).map(m=>[m.ticker,m.yes_sub_title||m.subtitle,m.last_price_dollars??m.last_price])}});
+  await step('kalshi','kalshi','Batch: markets for several events',async()=>{
+    const j=await k('/markets?event_ticker=CONTROLS-2026,CONTROLH-2026,SENATETX-26,GOVPARTYAZ-26&limit=100');
+    return{count:(j.markets||[]).length,tickers:(j.markets||[]).map(m=>m.ticker)};
+  });
+  await step('kalshi','kalshi','Price history',async()=>{
+    const end=Math.floor(Date.now()/1000),start=end-3600*6;
+    const j=await k(`/series/CONTROLS/markets/CONTROLS-2026-R/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=60`);
+    return{points:(j.candlesticks||[]).length,sample:slim(j.candlesticks)};
+  });
+  await step('kalshi','kalshi','10 quick calls in a row',async()=>{
+    const series=['SENATEGA','SENATENC','SENATEMI','SENATEME','SENATEOH','SENATEIA','SENATENH','SENATEAK','SENATENE','SENATEMN'];
+    let ok=0,codes=[];
+    for(const s of series){try{await k('/events?series_ticker='+s+'&with_nested_markets=true&status=open');ok++;codes.push(200)}catch(e){codes.push(String(e))}}
+    if(ok<series.length)throw new Error(ok+'/'+series.length+' succeeded '+codes.join(','));
+    return{ok};
+  });
+}
+
+async function poly(){
+  const G='https://gamma-api.polymarket.com';
+  const re=/senate|house|governor|midterm|congress/i;
+  await step('poly','poly','Reach Polymarket',async()=>{
+    const j=await getJSON(G+'/events?closed=false&limit=200&order=volume&ascending=false','poly');
+    const hits=j.filter(e=>re.test(e.title||'')).map(e=>[e.slug,e.title,(e.markets||[]).length]);
+    return{events:j.length,electionEvents:hits.length,sample:hits.slice(0,40)};
+  });
+  await step('poly','poly','Search 2026 Senate races',async()=>{
+    const j=await getJSON(G+'/public-search?q='+encodeURIComponent('2026 Senate election')+'&limit_per_type=25','poly');
+    const ev=(j.events||[]).map(e=>[e.slug,e.title,(e.markets||[]).length,slim((e.markets||[])[0])?.outcomePrices]);
+    return{events:ev.length,sample:ev.slice(0,25)};
+  });
+}
+
 (async()=>{
-  const basic=await step('Reach Kalshi from this browser',async()=>{const j=await get('/exchange/status');return{status:j}});
-  if(!basic){document.getElementById('sample').textContent='Blocked. The browser could not read Kalshi directly, so we will need the relay fallback.';}
-  else{
-    const re=/senate|house|governor|gubernatorial|control|congress|district|midterm/i;
-    for(const cat of ['Elections']){
-      await step('List '+cat+' series',async()=>{
-        const j=await get('/series?category='+encodeURIComponent(cat));
-        const all=j.series||[];
-        const hits=all.filter(s=>re.test(s.title||'')||re.test(s.ticker||'')).map(s=>[s.ticker,s.title]);
-        return{total:all.length,matching:hits.length,series:hits,sampleSeries:slim(all[0])};
-      });
-    }
-    const ev=await step('Senate control event',async()=>{
-      const j=await get('/events?series_ticker=CONTROLS&with_nested_markets=true&status=open');
-      return{count:(j.events||[]).length,sampleEvent:slim((j.events||[])[0]),cursor:!!j.cursor};
-    });
-    await step('Texas Senate (party market)',async()=>{
-      const j=await get('/events?series_ticker=SENATETX&with_nested_markets=true');
-      return{sampleEvent:slim((j.events||[])[0])};
-    });
-    await step('Michigan Senate (candidate market)',async()=>{
-      const j=await get('/events?series_ticker=KXMISENATE&with_nested_markets=true');
-      return{sampleEvent:slim((j.events||[])[0])};
-    });
-    await step('Market detail',async()=>{const j=await get('/markets/CONTROLS-2026-R');return{market:slim(j.market)}});
-    await step('Markets by event list',async()=>{
-      const j=await get('/markets?event_ticker=CONTROLS-2026,SENATETX-26&limit=50');
-      return{count:(j.markets||[]).length,tickers:(j.markets||[]).map(m=>m.ticker)};
-    });
-    await step('Price history (candlesticks)',async()=>{
-      const end=Math.floor(Date.now()/1000),start=end-3600*6;
-      const j=await get(`/series/CONTROLS/markets/CONTROLS-2026-R/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=60`);
-      return{points:(j.candlesticks||[]).length,sample:slim(j.candlesticks)};
-    });
-    try{
-      const m=(await get('/markets?event_ticker=CONTROLS-2026,CONTROLH-2026&limit=20')).markets||[];
-      document.getElementById('sample').innerHTML=m.length?m.map(x=>`<div class="row"><span>${x.title||x.ticker}</span><span>${x.yes_bid_dollars??x.yes_bid??'?'} / ${x.yes_ask_dollars??x.yes_ask??'?'} · last ${x.last_price_dollars??x.last_price??'?'}</span></div>`).join(''):'No markets returned for the control tickers I guessed. The report will show the right ones.';
-    }catch(e){document.getElementById('sample').textContent='Sample failed: '+e}
-  }
-  report.calls=attempts;const txt=JSON.stringify(report);
+  await kalshi();
+  await poly();
+  const txt=JSON.stringify(report);
   const ta=document.getElementById('report');ta.value=txt;
   const b=document.getElementById('copy');b.disabled=false;
   b.onclick=async()=>{try{await navigator.clipboard.writeText(txt);document.getElementById('copied').textContent='Copied '+Math.round(txt.length/1024)+' KB. Paste it into the chat.'}catch(e){ta.select();document.getElementById('copied').textContent='Copy failed. Select all in the box below and copy.'}};
