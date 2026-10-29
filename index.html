@@ -499,6 +499,7 @@ function render(){
 function renderStatus(){
   const t=lastOk?lastOk.toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"}):"–";
   let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s${lastMode==="fast"?", fast":""})</span>`:""}`;
+  if(bf.running)s+=` · filling in trends <span class="num">${bf.done}/${bf.total}</span>`;
   if(errCount)s+=` · <span class="err">${errCount} race${errCount>1?"s":""} didn't load</span>`;
   if(ui.auto&&nextAt)s+=` · next in <b class="num" id="cd">${Math.max(0,Math.round((nextAt-Date.now())/1000))}s</b>`;
   $("updated").innerHTML=s;
@@ -581,6 +582,7 @@ async function refresh(){
     for(const r of races.values())metrics(r);
     render();
     if(detail){renderDetailMeta();if(detail.range==="1h"||detail.range==="6h")loadDetail()}
+    if(!bf.started)backfill();
   }catch(e){
     $("updated").innerHTML=`<span class="err">Couldn't load the latest odds (${esc(e.message)}). Will try again.</span>`;
   }finally{
@@ -589,6 +591,66 @@ async function refresh(){
   }
 }
 let lastSecs=null;
+
+// ---------- Backfill: fill trend lines from price history ----------
+// Someone who opens the page mid-evening has no history yet, so sparklines are flat and the
+// 15-minute column is empty. Pull the last 3 hours of 1-minute prices for each active race
+// and merge them in. Devices that have been open all along already have the points and skip it.
+const BF_HOURS=3;
+const bf={started:false,running:false,done:0,total:0};
+function raceValueFrom(r,priceOf){
+  // Same calculation as the live value: Democratic share of the D/R pair, or the chance the
+  // Republican loses in three-way races, or the leader's odds when no party is tagged.
+  const outs=r.outs.map(o=>({party:o.party,p:priceOf(o.ticker)}));
+  if(outs.some(o=>o.p==null))return null;
+  if(r.multi){const tot=outs.reduce((s,o)=>s+o.p,0),rp=outs.find(o=>o.party==="R")?.p;return tot>0&&rp!=null?1-rp/tot:null}
+  if(r.d!=null)return dProbOf(outs,"p");
+  return priceOf(r.leader.ticker);
+}
+function needsBackfill(r,now){
+  if(!r.series)return false;
+  if(!r.type.startsWith("ctl")&&r.vol24<2000)return false;      // skip thin markets
+  const h=history[r.id]||[];
+  return h.filter(p=>p[0]>=now-BF_HOURS*3600e3).length<BF_HOURS*60*0.4;
+}
+async function backfill(){
+  bf.started=true;
+  const now=Date.now();
+  const todo=[...races.values()].filter(r=>needsBackfill(r,now));
+  if(!todo.length)return;
+  bf.running=true;bf.done=0;bf.total=todo.length;renderStatus();
+  // Round to the minute so several viewers ask for identical URLs and share the relay's cached copy.
+  const end=Math.floor(now/60000)*60,start=end-BF_HOURS*3600;
+  // Only the markets that feed the value: both sides of a D/R race, every candidate in a three-way race.
+  const needed=r=>r.multi||r.d!=null?r.outs.filter(o=>r.multi||o.party==="D"||o.party==="R"):[r.leader];
+  let sinceRender=0;
+  await pool(todo,3,async r=>{
+    try{
+      const series=await Promise.all(needed(r).map(async o=>{
+        const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=1`);
+        return[o.ticker,new Map((j.candlesticks||[]).map(c=>[c.end_period_ts,candleValue(c)]).filter(x=>x[1]!=null))];
+      }));
+      const byTicker=new Map(series);
+      // Walk minute by minute, carrying each market's last known price forward through quiet minutes.
+      const last=new Map(),pts=[];
+      for(let t=start+60;t<=end;t+=60){
+        for(const [tk,m] of byTicker)if(m.has(t))last.set(tk,m.get(t));
+        const v=raceValueFrom(r,tk=>last.has(tk)?last.get(tk):(byTicker.has(tk)?null:r.outs.find(o=>o.ticker===tk)?.p??null));
+        if(v!=null)pts.push([t*1000,v]);
+      }
+      if(pts.length){
+        const have=history[r.id]||[];
+        const merged=have.concat(pts.filter(p=>!have.some(q=>Math.abs(q[0]-p[0])<45e3))).sort((a,b)=>a[0]-b[0]);
+        history[r.id]=merged.slice(-400);
+      }
+    }catch(e){}
+    bf.done++;
+    if(++sinceRender>=8){sinceRender=0;for(const x of races.values())metrics(x);render();renderStatus()}
+  });
+  store.set("et.history",history);
+  bf.running=false;
+  for(const x of races.values())metrics(x);render();renderStatus();
+}
 
 // ---------- Race detail: price history chart ----------
 const RANGES=[

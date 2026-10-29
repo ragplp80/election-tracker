@@ -40,10 +40,13 @@ module.exports = async (req, res) => {
   const body = await upstream.text();
   res.setHeader("Content-Type", "application/json");
   res.setHeader("x-relay-attempts", String(attempts));
+  const history = pathname.includes("candlesticks");
   if (upstream.ok) {
     res.setHeader("Cache-Control", slow
       ? "public, s-maxage=600, stale-while-revalidate=600"
-      : "public, s-maxage=15, stale-while-revalidate=15");
+      : history
+        ? "public, s-maxage=60, stale-while-revalidate=60"   // past prices don't change; share across viewers
+        : "public, s-maxage=15, stale-while-revalidate=15");
   } else {
     res.setHeader("Cache-Control", "no-store");
   }
