@@ -108,6 +108,7 @@ h1 small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color
 .held.N{color:var(--faint);font-weight:700;font-size:9.5px;letter-spacing:.04em;text-transform:uppercase}
 .chip.pickD{background:var(--dem);color:#fff}
 .chip.pickR{background:var(--rep);color:#fff}
+.chip.pickI{background:var(--ind);color:#fff}
 .flipline{font-size:12px;color:var(--muted)} .flipline b{font-weight:700} .flipline .D{color:var(--dem)} .flipline .R{color:var(--rep)}
 .chip.thin{border:1px dashed var(--faint);color:var(--muted);font-weight:700}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
@@ -212,7 +213,7 @@ footer a{color:var(--muted)}
 </div>
 
 <footer>
-  <div>Moves are in points of Democratic win probability: <span class="up">blue</span> means toward the Democrat, <span class="down">red</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
+  <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability: <span class="up">blue</span> means toward the Democrat, <span class="down">red</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
   <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that redrew or are fighting over their district lines for 2026.</div>
   <div>Trump '24 is the 2024 presidential margin in the state (R+ or D+, rounded). Left off for House races because several states redrew districts for 2026. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
   <div>Data: Kalshi public market data via this site's relay, cached about 15 seconds. <a href="test.html">Connection test</a></div>
@@ -307,6 +308,7 @@ function partyOf(m){
   const suf=(m.ticker||"").split("-").pop();
   if(suf==="D"||/democrat/i.test(m.yes_sub_title||""))return"D";
   if(suf==="R"||/republican/i.test(m.yes_sub_title||""))return"R";
+  if(suf==="I"||/independent/i.test(m.yes_sub_title||""))return"I";
   return"X";
 }
 function priceOf(m,prev){
@@ -334,14 +336,18 @@ function buildRace(meta,ev){
   })).filter(o=>o.p!=null);
   if(!outs.length)return null;
   outs.sort((a,b)=>b.p-a.p);
-  const d=dProbOf(outs,"p"),d24=dProbOf(outs,"p24");
+  // A strong independent (5%+, e.g. Dan Osborn in Nebraska) makes it a three-way race:
+  // then the tracked number is the chance the Republican loses, out of all candidates.
+  const multi=outs.some(o=>(o.party==="I"||o.party==="X")&&o.p>=0.05)&&outs.some(o=>o.party==="R");
+  const notR=key=>{const tot=outs.reduce((s,o)=>s+(o[key]??0),0),r=outs.find(o=>o.party==="R")?.[key];return tot>0&&r!=null?1-r/tot:null};
+  const d=multi?notR("p"):dProbOf(outs,"p"),d24=multi?notR("p24"):dProbOf(outs,"p24");
   const st=meta.st;
   let label,sub;
   if(meta.type==="senate"){label=STATES[st];sub=meta.special?"Senate special":"Senate"}
   else if(meta.type==="gov"){label=STATES[st];sub="Governor"}
   else if(meta.type==="house"){label=st+"-"+(meta.dist?meta.dist:"AL");sub="House"+(meta.special?" special":"")}
   else{label=meta.type==="ctlS"?"Senate control":"House control";sub=""}
-  return{id:ev.event_ticker,type:meta.type,st,dist:meta.dist,label,sub,outs,
+  return{id:ev.event_ticker,type:meta.type,st,dist:meta.dist,label,sub,outs,multi,
     key:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,series:meta.series,
     leader:outs[0],d,d24,vol24:outs.reduce((s,o)=>s+o.vol24,0),
     trump:(meta.type==="senate"||meta.type==="gov")?TRUMP24[st]??null:null,
@@ -389,7 +395,7 @@ function metrics(r){
   const prevLeader=prevSnap.get(r.id+":leader");
   if(prevLeader&&prevLeader!==(r.leader.party+r.leader.name))r.flags.push({k:"flip",t:"Lead flip",cls:"flip"});
   if(r.d15!=null&&Math.abs(r.d15)>=0.05&&!r.thin)r.flags.push({k:"move",t:"Big move",cls:"move"});
-  r.pickup=(r.held==="D"||r.held==="R")&&(r.leader.party==="D"||r.leader.party==="R")&&r.leader.party!==r.held&&r.leader.p>=0.5?r.leader.party:null;
+  r.pickup=(r.held==="D"||r.held==="R")&&(r.leader.party==="D"||r.leader.party==="R"||r.leader.party==="I")&&r.leader.party!==r.held&&r.leader.p>=0.5?r.leader.party:null;
   if(r.pickup)r.flags.unshift({k:"pickup",t:r.pickup+" pickup",cls:"pick"+r.pickup});
   if(r.thin)r.flags.push({k:"thin",t:"Thin",cls:"thin"});
 }
@@ -411,6 +417,11 @@ function heldBadge(h){
   return`<div class="held N">–</div>`;
 }
 function oddsCell(r){
+  if(r.multi){
+    const tot=r.outs.reduce((s,o)=>s+o.p,0)||1,a=r.outs[0],b=r.outs[1];
+    const cls=o=>o.party==="D"?"d":o.party==="R"?"r2":"x";
+    return`<div class="oddslab"><span class="${cls(a)}">${esc(a.name)} ${fmtPct(a.p)}</span><span class="${cls(b)}">${fmtPct(b.p)} ${esc(b.name)}</span></div><div class="splitbar">${r.outs.map(o=>`<i class="${o.party==="D"?"d":o.party==="R"?"r":"x"}" style="width:${o.p/tot*100}%"></i>`).join("")}</div>`;
+  }
   const d=r.outs.find(o=>o.party==="D"),rp=r.outs.find(o=>o.party==="R");
   if(r.d!=null&&(d||rp)){
     const dn=d?esc(d.name):"Democrat",rn=rp?esc(rp.name):"Republican";
@@ -442,9 +453,9 @@ function render(){
   $("nMove").textContent=list.filter(r=>r.flags.some(f=>f.k==="move")).length;
   $("nCall").textContent=list.filter(r=>r.flags.some(f=>f.k==="call")).length;
   // Seats that change hands if every current favorite wins
-  const flipCount=t=>{const rs=list.filter(r=>r.type===t);return{D:rs.filter(r=>r.pickup==="D").length,R:rs.filter(r=>r.pickup==="R").length}};
+  const flipCount=t=>{const rs=list.filter(r=>r.type===t);return{D:rs.filter(r=>r.pickup==="D").length,R:rs.filter(r=>r.pickup==="R").length,I:rs.filter(r=>r.pickup==="I").length}};
   const fs=flipCount("senate"),fg=flipCount("gov"),fh=flipCount("house");
-  const fmtF=(lab,f)=>`${lab} <b class="D">D +${f.D}</b> / <b class="R">R +${f.R}</b>`;
+  const fmtF=(lab,f)=>`${lab} <b class="D">D +${f.D}</b> / <b class="R">R +${f.R}</b>${f.I?` / <b style="color:var(--ind)">I +${f.I}</b>`:""}`;
   $("flipLine").innerHTML=`If favorites win: ${fmtF("Senate",fs)} · ${fmtF("Gov",fg)} · ${fmtF("House*",fh)}`;
   $("flipLine").title="House counts only districts with known holders";
   // Next poll closing
@@ -586,7 +597,7 @@ const RANGES=[
   {k:"1m",label:"1M",secs:30*86400,period:60},
   {k:"all",label:"All",secs:2*365*86400,period:1440}];
 let detail=null; // {id, range, series:[{o,color,pts}], token}
-const partyColor=(o,i)=>o.party==="D"?"var(--dem)":o.party==="R"?"var(--rep)":(i%2?"var(--muted)":"var(--ind)");
+const partyColor=(o,i)=>o.party==="D"?"var(--dem)":o.party==="R"?"var(--rep)":o.party==="I"?"var(--ind)":(i%2?"var(--muted)":"var(--ind)");
 function candleValue(c){
   const b=num(c.yes_bid?.close_dollars),a=num(c.yes_ask?.close_dollars),p=num(c.price?.close_dollars);
   if(b!=null&&a!=null&&a>0&&a-b<=0.1)return(a+b)/2;
