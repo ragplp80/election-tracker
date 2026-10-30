@@ -116,6 +116,47 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:grid;gap:4px}
 footer a{color:var(--muted)}
 .err{color:var(--rep)}
 
+/* Projected balance of power */
+.balance{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 14px}
+.bal{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px 14px;display:grid;gap:10px;min-width:0}
+.balhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.balhead h2{margin:0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.baltally{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.baltally b{font-size:30px;font-weight:800;font-variation-settings:"wdth" 80;line-height:1}
+.baltally .d{color:var(--dem)} .baltally .r{color:var(--rep)} .baltally .i{color:var(--ind)}
+.baltally small{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);margin-left:3px}
+.seatbar{position:relative;height:26px;border-radius:5px;overflow:hidden;display:flex;background:var(--line)}
+.seatbar i{display:block;height:100%;border-right:1px solid var(--surface)}
+.seatbar i:last-child{border-right:0}
+.seg-dnot{background:color-mix(in srgb,var(--dem) 55%,var(--bg))}
+.seg-dsafe{background:var(--dem)}
+.seg-dlik{background:color-mix(in srgb,var(--dem) 72%,var(--surface))}
+.seg-dlean{background:color-mix(in srgb,var(--dem) 45%,var(--surface))}
+.seg-dtoss{background:color-mix(in srgb,var(--dem) 22%,var(--surface2))}
+.seg-ind{background:var(--ind)}
+.seg-rtoss{background:color-mix(in srgb,var(--rep) 22%,var(--surface2))}
+.seg-rlean{background:color-mix(in srgb,var(--rep) 45%,var(--surface))}
+.seg-rlik{background:color-mix(in srgb,var(--rep) 72%,var(--surface))}
+.seg-rsafe{background:var(--rep)}
+.seg-rnot{background:color-mix(in srgb,var(--rep) 55%,var(--bg))}
+.majline{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--fg);transform:translateX(-1px)}
+.barwrap{position:relative;padding-top:4px}
+.barscale{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+.barscale span:nth-child(2){font-weight:700;color:var(--fg)}
+.range{position:relative;height:12px;margin-top:2px}
+.range i{position:absolute;top:5px;height:2px;background:var(--fg);opacity:.6}
+.range i::before,.range i::after{content:"";position:absolute;top:-4px;width:2px;height:10px;background:var(--fg)}
+.range i::before{left:0}.range i::after{right:0}
+.ballegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--muted)}
+.ballegend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.ballegend em{display:inline-block;width:10px;height:10px;border-radius:2px;font-style:normal}
+.balnote{font-size:12px;color:var(--muted)} .balnote b{color:var(--fg)}
+.tosses{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.tosses .lab{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-right:2px}
+.tchip{border:1px solid var(--line);background:var(--surface2);border-radius:6px;padding:4px 7px;font-size:12px;font-weight:700}
+.tchip .d{color:var(--dem)} .tchip .r{color:var(--rep)} .tchip .i{color:var(--ind)}
+@media (max-width:820px){.balance{grid-template-columns:1fr}}
+
 /* Race detail sheet */
 .row[data-id],.ctl[data-id]{cursor:pointer}
 .row[data-id]:hover{background:var(--surface2)}
@@ -185,6 +226,11 @@ footer a{color:var(--muted)}
   </div>
 </section>
 
+<section class="balance" id="balance">
+  <div class="bal" id="balS"><div class="balhead"><h2>Senate if the odds are right</h2></div><div class="balnote">Loading…</div></div>
+  <div class="bal" id="balH"><div class="balhead"><h2>House if the odds are right</h2></div><div class="balnote">Loading…</div></div>
+</section>
+
 <section class="tools">
   <span class="seglabel">Sort</span>
   <div class="seg" id="sortSeg">
@@ -224,6 +270,7 @@ footer a{color:var(--muted)}
   <div>"Move over" sets the window for the move column, the Movers sort and the big-move count. "Since last look" compares with the last time this device had the page open (more than 30 minutes ago). When the page hasn't been open long enough, it looks up the missing history. Big move = 5+ points in 15m or 1h, 8+ points over longer windows.</div>
   <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability: <span class="up">blue</span> means toward the Democrat, <span class="down">red</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
   <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that redrew or are fighting over their district lines for 2026.</div>
+  <div>Balance of power: each Senate race is counted for its current favorite. Safe = favorite 90%+, likely 75–90%, lean 60–75%, toss-up under 60%. Seats not up this year: 34 Democratic (including King and Sanders, who caucus with Democrats) and 31 Republican. Democrats need 51 for control; Republicans need 50 because Vice President Vance breaks ties. The House has markets on only about 100 of 435 districts, so its seat count comes from the market on how many seats Democrats will win: the expected number, with the range covering the middle 80% of outcomes.</div>
   <div>Trump '24 is the 2024 presidential margin in the state (R+ or D+, rounded). Left off for House races because several states redrew districts for 2026. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
   <div>Odds update about every 15 seconds.</div>
 </footer>
@@ -359,7 +406,7 @@ function buildRace(meta,ev){
   else if(meta.type==="house"){label=st+"-"+(meta.dist?meta.dist:"AL");sub="House"+(meta.special?" special":"")}
   else{label=meta.type==="ctlS"?"Senate control":"House control";sub=""}
   return{id:ev.event_ticker,type:meta.type,st,dist:meta.dist,label,sub,outs,multi,
-    key:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,series:meta.series,
+    key:meta.type==="senate"?`senate-${st}`:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,series:meta.series,
     leader:outs[0],d,d24,vol24:outs.reduce((s,o)=>s+o.vol24,0),
     trump:(meta.type==="senate"||meta.type==="gov")?TRUMP24[st]??null:null,
     polls:POLLS[st]??null,
@@ -368,6 +415,7 @@ function buildRace(meta,ev){
 
 // ---------- State ----------
 let series=[],races=new Map(),prevSnap=new Map(),busy=false,lastOk=null,errCount=0;
+let houseSeats=null; // {buckets:[{lo,hi,mid,p,label}], vol}
 let history=store.get("et.history",{});           // id -> [[t, value]]
 let goingIn=store.get("et.goingIn",null);         // {date, at, races:{id:{party,name,p,d}}}
 const ui=store.get("et.ui",{sort:"key",type:"all",compet:false,auto:false});
@@ -439,6 +487,91 @@ function metrics(r){
   if(r.thin)r.flags.push({k:"thin",t:"Thin",cls:"thin"});
 }
 
+// ---------- Balance of power ----------
+const SEN_NOT_UP={D:34,R:31};   // seats not on the ballot in 2026 (D includes King and Sanders)
+function band(p){return p>=0.9?"safe":p>=0.75?"lik":p>=0.6?"lean":"toss"}
+function parseSeatMarket(j){
+  const ev=(j.events||[]).find(e=>/-27$/.test(e.event_ticker))||(j.events||[])[0];
+  if(!ev)return null;
+  const buckets=[];
+  for(const m of ev.markets||[]){
+    const lab=m.yes_sub_title||m.subtitle||"";
+    let lo=null,hi=null,x;
+    if((x=lab.match(/(\d{3})\s*[-–]\s*(\d{3})/))){lo=+x[1];hi=+x[2]}
+    else if((x=lab.match(/(below|under|fewer than|less than)\s*(\d{3})/i))){hi=+x[2]-1;lo=hi-3}
+    else if((x=lab.match(/(above|over|more than)\s*(\d{3})/i))){lo=+x[2]+1;hi=lo+3}
+    else if((x=lab.match(/(\d{3})\s*\+|(\d{3}) or more/i))){lo=+(x[1]||x[2]);hi=lo+3}
+    else if(num(m.floor_strike)!=null||num(m.cap_strike)!=null){lo=num(m.floor_strike)??num(m.cap_strike)-3;hi=num(m.cap_strike)??lo+3}
+    const p=priceOf(m);
+    if(lo==null||p==null)continue;
+    buckets.push({lo,hi,mid:(lo+hi)/2,p,label:lab});
+  }
+  if(buckets.length<3)return null;
+  buckets.sort((a,b)=>a.mid-b.mid);
+  return{buckets,id:ev.event_ticker};
+}
+function seatStats(hs){
+  const tot=hs.buckets.reduce((s,b)=>s+b.p,0);if(!tot)return null;
+  const ps=hs.buckets.map(b=>({...b,q:b.p/tot}));
+  const mean=ps.reduce((s,b)=>s+b.mid*b.q,0);
+  const pct=t=>{let c=0;for(const b of ps){if(c+b.q>=t){const f=(t-c)/b.q;return b.lo+f*(b.hi-b.lo+1)}c+=b.q}return ps[ps.length-1].hi};
+  const pMaj=ps.reduce((s,b)=>s+(b.mid>=218?b.q:0),0);
+  return{mean,median:pct(0.5),p10:pct(0.1),p90:pct(0.9),pMaj};
+}
+function renderBalance(all){
+  // ----- Senate
+  const sen=[...new Map(all.filter(r=>r.type==="senate").map(r=>[r.st,r])).values()];
+  const byState=new Map(sen.map(r=>[r.st,r]));
+  const segs={dsafe:0,dlik:0,dlean:0,dtoss:0,ind:0,rtoss:0,rlean:0,rlik:0,rsafe:0};
+  const fav={D:SEN_NOT_UP.D,R:SEN_NOT_UP.R,I:0};let expD=SEN_NOT_UP.D,noMarket=[];
+  const tosses=[];
+  for(const st of Object.keys(HELD_SEN)){
+    const r=byState.get(st);
+    if(!r){const h=HELD_SEN[st];segs[h==="D"?"dsafe":"rsafe"]++;fav[h]++;if(h==="D")expD++;noMarket.push(st);continue}
+    const L=r.leader,party=L.party==="D"||L.party==="R"?L.party:"I",b=band(L.p);
+    fav[party]++;
+    if(party==="I")segs.ind++;else segs[(party==="D"?"d":"r")+b]++;
+    const dShare=r.outs.find(o=>o.party==="D");const tot=r.outs.reduce((s,o)=>s+o.p,0)||1;
+    expD+=dShare?dShare.p/tot:0;
+    if(b==="toss"||party==="I")tosses.push(r);
+  }
+  const order=[["dnot",SEN_NOT_UP.D],["dsafe",segs.dsafe],["dlik",segs.dlik],["dlean",segs.dlean],["dtoss",segs.dtoss],["ind",segs.ind],["rtoss",segs.rtoss],["rlean",segs.rlean],["rlik",segs.rlik],["rsafe",segs.rsafe],["rnot",SEN_NOT_UP.R]];
+  const ctl=fav.D>=51?"Democrats win control":fav.R>=50?"Republicans keep control":"Control depends on the independent";
+  const net=fav.D-47;
+  tosses.sort((a,b)=>a.leader.p-b.leader.p);
+  $("balS").innerHTML=`<div class="balhead"><h2>Senate if the odds are right</h2><span class="balnote"><b>${ctl}</b></span></div>
+    <div class="baltally num"><b class="d">${fav.D}<small>DEM</small></b><b class="r">${fav.R}<small>REP</small></b>${fav.I?`<b class="i">${fav.I}<small>IND</small></b>`:""}</div>
+    <div class="barwrap"><div class="seatbar" role="img" aria-label="Senate: ${fav.D} Democratic, ${fav.R} Republican${fav.I?", "+fav.I+" independent":""}">${order.filter(x=>x[1]>0).map(([k,n])=>`<i class="seg-${k}" style="width:${n}%" title="${n}"></i>`).join("")}</div><div class="majline" style="left:50%"></div></div>
+    <div class="barscale num"><span>D</span><span>50 + VP · 51</span><span>R</span></div>
+    <div class="ballegend">${legend([["dnot","Not up"],["dsafe","Safe 90%+"],["dlik","Likely 75%+"],["dlean","Lean 60%+"],["dtoss","Toss-up"]],"D")}${fav.I||segs.ind?legend([["ind","Independent"]]):""}</div>
+    <div class="balnote num">Net change: <b class="${net>=0?"up":"down"}">${net>=0?"D +"+net:"R +"+(-net)}</b> · Expected Democratic seats (weighted by odds): <b>${expD.toFixed(1)}</b>${noMarket.length?` · No market: ${noMarket.join(", ")} (counted for current party)`:""}</div>
+    ${tosses.length?`<div class="tosses"><span class="lab">Toss-ups</span>${tosses.map(r=>{const c=r.leader.party==="D"?"d":r.leader.party==="R"?"r":"i";return`<button class="tchip" data-open="${esc(r.id)}">${esc(r.st)} <span class="${c}">${r.leader.party==="X"?"":r.leader.party+" "}${fmtPct(r.leader.p)}</span></button>`}).join("")}</div>`:""}`;
+
+  // ----- House
+  const ctlH=all.find(r=>r.type==="ctlH");
+  const st=houseSeats&&seatStats(houseSeats);
+  const dist=all.filter(r=>r.type==="house");
+  const cnt={D:{safe:0,lik:0,lean:0,toss:0},R:{safe:0,lik:0,lean:0,toss:0}};
+  for(const r of dist){const pty=r.leader.party==="D"?"D":r.leader.party==="R"?"R":null;if(pty)cnt[pty][band(r.leader.p)]++}
+  const pickD=dist.filter(r=>r.pickup==="D").length,pickR=dist.filter(r=>r.pickup==="R").length;
+  if(!st){
+    $("balH").innerHTML=`<div class="balhead"><h2>House if the odds are right</h2></div><div class="balnote">The seat-count market isn't available right now.${ctlH?` Control odds: <b>${fmtPct(ctlH.d)} Democratic</b>.`:""}</div>`;
+  } else {
+    const D=Math.round(st.median),R=435-D,w=n=>(n/435*100).toFixed(2);
+    $("balH").innerHTML=`<div class="balhead"><h2>House if the odds are right</h2><span class="balnote"><b>${D>=218?"Democrats win control":"Republicans keep control"}</b></span></div>
+      <div class="baltally num"><b class="d">${D}<small>DEM</small></b><b class="r">${R}<small>REP</small></b></div>
+      <div class="barwrap"><div class="seatbar" role="img" aria-label="House: about ${D} Democratic, ${R} Republican"><i class="seg-dsafe" style="width:${w(D)}%"></i><i class="seg-rsafe" style="width:${w(R)}%"></i></div><div class="majline" style="left:${w(217.5)}%"></div></div>
+      <div class="range" title="Middle 80% of outcomes"><i style="left:${w(st.p10)}%;width:${w(st.p90-st.p10)}%"></i></div>
+      <div class="barscale num"><span>D</span><span>218 to win</span><span>R</span></div>
+      <div class="balnote num">Most likely: <b>${D} Democratic seats</b> · range ${Math.round(st.p10)}–${Math.round(st.p90)} · ${fmtPct(st.pMaj)} chance of 218+${ctlH?` (control market: ${fmtPct(ctlH.d)})`:""}</div>
+      <div class="balnote num">Districts with markets (${dist.length}): <b class="up">D-favored ${cnt.D.safe+cnt.D.lik+cnt.D.lean}</b>, toss-ups <b>${cnt.D.toss+cnt.R.toss}</b>, <b class="down">R-favored ${cnt.R.safe+cnt.R.lik+cnt.R.lean}</b> · Pickups where the holder is known: <b class="up">D +${pickD}</b> / <b class="down">R +${pickR}</b></div>`;
+  }
+}
+function legend(items,party){
+  // Each key shows the Democratic and Republican shade side by side
+  return items.map(([k,l])=>`<span><em class="seg-${k}"></em>${party?`<em class="seg-${k.replace(/^d/,"r")}" style="margin-left:-3px"></em>`:""}${l}</span>`).join("");
+}
+
 // ---------- Rendering ----------
 function spark(id,color){
   const all=history[id]||[];let h=all.filter(p=>p[0]>=Date.now()-3*3600e3);if(h.length<2)h=all.slice(-180);
@@ -488,6 +621,7 @@ function render(){
   const best=new Map();
   for(const r of all){if(r.type.startsWith("ctl"))continue;const b=best.get(r.key);if(!b||r.vol24>b.vol24)best.set(r.key,r)}
   let list=[...best.values()];
+  renderBalance([...list,...all.filter(r=>r.type.startsWith("ctl"))]);
   $("nUpset").textContent=list.filter(r=>r.flags.some(f=>f.k==="upset")).length;
   $("nMove").textContent=list.filter(r=>r.flags.some(f=>f.k==="move")).length;
   $("nMoveLab").textContent="Big moves ("+winLabel(true).toLowerCase()+")";
@@ -606,6 +740,7 @@ async function refresh(){
     if(!result){result=await fullSweep(prog);lastMode="full";
       if(!store.get("et.batchOK",true)&&refreshN%10===0){batchOK=true;store.set("et.batchOK",true)} }  // give batching another chance now and then
     refreshN++;
+    try{houseSeats=parseSeatMarket(await kget("/events?series_ticker=KXDHOUSESEATS&with_nested_markets=true&status=open"))}catch(e){}
     // Remember the previous refresh for "Last" moves and lead flips
     for(const r of races.values()){prevSnap.set(r.id,val(r));prevSnap.set(r.id+":leader",r.leader.party+r.leader.name)}
     errCount=result.errs;const now=Date.now();
@@ -867,6 +1002,7 @@ document.addEventListener("visibilitychange",()=>{
 function setPressed(seg,v){for(const b of $(seg).querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.v===v)}
 function saveUi(){store.set("et.ui",ui)}
 $("refresh").onclick=refresh;
+$("balance").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("table").addEventListener("click",e=>{const row=e.target.closest(".row[data-id]");if(row)openDetail(row.dataset.id)});
 for(const id of ["ctlS","ctlH"])$(id).addEventListener("click",()=>{const d=$(id).dataset.id;if(d)openDetail(d)});
 $("auto").onclick=()=>{ui.auto=!ui.auto;$("auto").setAttribute("aria-pressed",ui.auto);saveUi();keepAwake(ui.auto);if(ui.auto&&!busy)refresh();else schedule();renderStatus()};
