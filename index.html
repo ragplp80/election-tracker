@@ -177,7 +177,7 @@ footer a{color:var(--muted)}
     <h2>Tonight</h2>
     <div class="tonight">
       <div class="tile"><b id="nUpset" class="num">–</b><span>Upsets vs. going in</span></div>
-      <div class="tile"><b id="nMove" class="num">–</b><span>Big moves (15 min)</span></div>
+      <div class="tile"><b id="nMove" class="num">–</b><span id="nMoveLab">Big moves</span></div>
       <div class="tile"><b id="nCall" class="num">–</b><span>Crossed 90% tonight</span></div>
     </div>
     <div class="flipline" id="flipLine"></div>
@@ -194,6 +194,14 @@ footer a{color:var(--muted)}
     <button data-v="flips" aria-pressed="false">Flips</button>
     <button data-v="close" aria-pressed="false">Poll close</button>
   </div>
+  <span class="seglabel">Move over</span>
+  <div class="seg" id="winSeg">
+    <button data-v="15m" aria-pressed="false">15m</button>
+    <button data-v="1h" aria-pressed="false">1h</button>
+    <button data-v="6h" aria-pressed="false">6h</button>
+    <button data-v="24h" aria-pressed="false">24h</button>
+    <button data-v="last" aria-pressed="false" id="winLastBtn">Since last look</button>
+  </div>
   <span class="seglabel">Show</span>
   <div class="seg" id="typeSeg">
     <button data-v="all" aria-pressed="true">All</button>
@@ -207,12 +215,13 @@ footer a{color:var(--muted)}
 
 <div class="table" id="table">
   <div class="row head">
-    <div>Race</div><div>Held</div><div>Odds now</div><div class="rt">Last</div><div class="rt">15 min</div><div class="rt">Going in</div><div class="rt">24 h</div><div class="rt">24h vol</div><div class="rt">Trump '24</div><div class="rt">Polls</div><div class="rt">Trend · flags</div>
+    <div>Race</div><div>Held</div><div>Odds now</div><div class="rt">Last</div><div class="rt" id="winHead">1h</div><div class="rt">Going in</div><div class="rt">24 h</div><div class="rt">24h vol</div><div class="rt">Trump '24</div><div class="rt">Polls</div><div class="rt">Trend · flags</div>
   </div>
   <div class="empty" id="loading">Loading every Senate, governor and House race. The first load takes about 30 seconds.</div>
 </div>
 
 <footer>
+  <div>"Move over" sets the window for the move column, the Movers sort and the big-move count. "Since last look" compares with the last time this device had the page open (more than 30 minutes ago). When the page hasn't been open long enough, it looks up the missing history. Big move = 5+ points in 15m or 1h, 8+ points over longer windows.</div>
   <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability: <span class="up">blue</span> means toward the Democrat, <span class="down">red</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
   <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that redrew or are fighting over their district lines for 2026.</div>
   <div>Trump '24 is the 2024 presidential margin in the state (R+ or D+, rounded). Left off for House races because several states redrew districts for 2026. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
@@ -362,28 +371,56 @@ let series=[],races=new Map(),prevSnap=new Map(),busy=false,lastOk=null,errCount
 let history=store.get("et.history",{});           // id -> [[t, value]]
 let goingIn=store.get("et.goingIn",null);         // {date, at, races:{id:{party,name,p,d}}}
 const ui=store.get("et.ui",{sort:"key",type:"all",compet:false,auto:false});
+if(!ui.win)ui.win="1h";
+// "Since last look": the last time this device had the page open, at least 30 minutes ago.
+// Reloads within a visit keep the same comparison point.
+let compareFrom=store.get("et.compareFrom",null);
+function newVisitCheck(){
+  const seen=store.get("et.lastSeen",null);
+  if(seen&&Date.now()-seen>30*60e3&&seen!==compareFrom){compareFrom=seen;store.set("et.compareFrom",seen)}
+}
+newVisitCheck();
+const WIN={"15m":{mins:15,tol:5,big:0.05,short:"15m"},"1h":{mins:60,tol:15,big:0.05,short:"1h"},
+  "6h":{mins:360,tol:75,big:0.08,short:"6h"},"24h":{mins:1440,big:0.08,short:"24h"},
+  "last":{big:0.08,tol:75}};
+function winLabel(short){
+  if(ui.win!=="last")return WIN[ui.win].short;
+  if(!compareFrom)return short?"Since last":"Since last look";
+  const d=new Date(compareFrom),same=d.toDateString()===new Date().toDateString();
+  const t=d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}).replace(":00","").replace(" ","").toLowerCase();
+  return"Since "+(same?"":d.toLocaleDateString([], {weekday:"short"})+" ")+t;
+}
 // The tracked value per race: Democratic win probability when there is a D or R market, otherwise the leader's odds.
 const val=r=>r.d!=null?r.d:r.leader.p;
 
-function pointAgo(id,mins){
-  const h=history[id];if(!h||h.length<2)return null;
-  const target=Date.now()-mins*60e3;
-  let best=null;for(const pt of h){if(pt[0]<=target)best=pt;else break}
-  if(!best){const oldest=h[0];if(Date.now()-oldest[0]>=2*60e3)best=oldest}
-  return best?best[1]:null;
+// Value at time t: the latest point at or before t, as long as it isn't too stale.
+function pointAt(id,t,tolMins){
+  const h=history[id];if(!h||!h.length)return null;
+  let best=null;for(const pt of h){if(pt[0]<=t)best=pt;else break}
+  if(best&&t-best[0]<=tolMins*60e3)return best[1];
+  // Allow a point just after t (e.g. history starts a minute late)
+  const after=h.find(pt=>pt[0]>t);
+  if(after&&after[0]-t<=Math.min(tolMins,10)*60e3)return after[1];
+  return null;
+}
+function pointAgo(id,mins,tol){return pointAt(id,Date.now()-mins*60e3,tol??Math.max(5,mins/4))}
+function winMove(r,v){
+  if(ui.win==="24h")return r.d24h;
+  if(ui.win==="last"){if(!compareFrom||Date.now()-compareFrom>72*3600e3)return null;const p=pointAt(r.id,compareFrom,WIN.last.tol);return p!=null?v-p:null}
+  const w=WIN[ui.win];const p=pointAgo(r.id,w.mins,w.tol);return p!=null?v-p:null;
 }
 function metrics(r){
   const v=val(r),prev=prevSnap.get(r.id);
   r.dLast=prev!=null?v-prev:null;
-  const p15=pointAgo(r.id,15);r.d15=p15!=null?v-p15:null;
   const gi=goingIn?.races?.[r.id];
   r.dIn=gi&&gi.d!=null&&r.d!=null?r.d-gi.d:(gi&&r.d==null?r.leader.p-gi.p:null);
   r.d24h=r.d!=null&&r.d24!=null?r.d-r.d24:null;
+  r.dWin=winMove(r,v);
   r.thin=r.vol24<2000;
   const volw=Math.min(1,Math.log10(r.vol24+1)/6);
   r.closeness=1-Math.abs(v-0.5)*2;
   r.keyScore=r.closeness*(0.35+0.65*volw);
-  const mv=Math.abs(r.d15??r.dLast??0);
+  const mv=Math.abs(r.dWin??0);
   r.moveScore=mv*(0.3+0.7*volw);
   // Flags
   r.flags=[];
@@ -396,7 +433,7 @@ function metrics(r){
   } else r.upsetLoss=0;
   const prevLeader=prevSnap.get(r.id+":leader");
   if(prevLeader&&prevLeader!==(r.leader.party+r.leader.name))r.flags.push({k:"flip",t:"Lead flip",cls:"flip"});
-  if(r.d15!=null&&Math.abs(r.d15)>=0.05&&!r.thin)r.flags.push({k:"move",t:"Big move",cls:"move"});
+  if(r.dWin!=null&&Math.abs(r.dWin)>=WIN[ui.win].big&&!r.thin)r.flags.push({k:"move",t:"Big move",cls:"move"});
   r.pickup=(r.held==="D"||r.held==="R")&&(r.leader.party==="D"||r.leader.party==="R"||r.leader.party==="I")&&r.leader.party!==r.held&&r.leader.p>=0.5?r.leader.party:null;
   if(r.pickup)r.flags.unshift({k:"pickup",t:r.pickup+" pickup",cls:"pick"+r.pickup});
   if(r.thin)r.flags.push({k:"thin",t:"Thin",cls:"thin"});
@@ -404,7 +441,7 @@ function metrics(r){
 
 // ---------- Rendering ----------
 function spark(id,color){
-  const h=(history[id]||[]).slice(-180);
+  const all=history[id]||[];let h=all.filter(p=>p[0]>=Date.now()-3*3600e3);if(h.length<2)h=all.slice(-180);
   if(h.length<2)return'<svg viewBox="0 0 100 26" preserveAspectRatio="none"><line x1="0" y1="13" x2="100" y2="13" stroke="var(--line)" stroke-width="1"/></svg>';
   const t0=h[0][0],t1=h[h.length-1][0]||t0+1;
   const vs=h.map(p=>p[1]);let lo=Math.min(...vs,0.45),hi=Math.max(...vs,0.55);if(hi-lo<0.1){const m=(hi+lo)/2;lo=m-0.05;hi=m+0.05}
@@ -439,7 +476,7 @@ function renderControl(elId,title,r){
   el.innerHTML=`<h2>${title}</h2>
     <div class="ctlnums"><div class="big d num">${fmtPct(r.d)}<small>DEM</small></div><div class="big r num">${fmtPct(1-r.d)}<small>REP</small></div></div>
     <div class="splitbar"><i class="d" style="width:${r.d*100}%"></i><i class="r" style="width:${(1-r.d)*100}%"></i></div>
-    <div class="ctlfoot num"><span>Last ${fmtPts(r.dLast)} · Going in ${fmtPts(r.dIn)} · 24h ${fmtPts(r.d24h)}</span></div>
+    <div class="ctlfoot num"><span>${esc(winLabel(true))} ${fmtPts(r.dWin)} · Going in ${fmtPts(r.dIn)} · 24h ${fmtPts(r.d24h)}</span></div>
     <div class="spark">${spark(r.id,r.d>=0.5?"var(--dem)":"var(--rep)")}</div>`;
 }
 function render(){
@@ -453,6 +490,9 @@ function render(){
   let list=[...best.values()];
   $("nUpset").textContent=list.filter(r=>r.flags.some(f=>f.k==="upset")).length;
   $("nMove").textContent=list.filter(r=>r.flags.some(f=>f.k==="move")).length;
+  $("nMoveLab").textContent="Big moves ("+winLabel(true).toLowerCase()+")";
+  const wh=$("winHead");if(wh)wh.textContent=winLabel(true);
+  $("winLastBtn").textContent=compareFrom?winLabel(false):"Since last look";
   $("nCall").textContent=list.filter(r=>r.flags.some(f=>f.k==="call")).length;
   // Seats that change hands if every current favorite wins
   const flipCount=t=>{const rs=list.filter(r=>r.type===t);return{D:rs.filter(r=>r.pickup==="D").length,R:rs.filter(r=>r.pickup==="R").length,I:rs.filter(r=>r.pickup==="I").length}};
@@ -484,13 +524,13 @@ function render(){
       <div class="heldcell">${heldBadge(r.held)}</div>
       <div class="odds">${oddsCell(r)}</div>
       <div class="c num">${fmtPts(r.dLast)}</div>
-      <div class="c num">${fmtPts(r.d15)}</div>
+      <div class="c num">${fmtPts(r.dWin)}</div>
       <div class="c num">${fmtPts(r.dIn)}</div>
       <div class="c num">${fmtPts(r.d24h)}</div>
       <div class="c num mute">${fmtVol(r.vol24)}</div>
       <div class="c num mute">${fmtMargin(r.trump)}</div>
       <div class="c num mute">${fmtClock(r.polls)}</div>
-      <div class="mobilemoves num">${r.held&&r.held!=="new"?`<span>Held ${r.held}</span>`:""}<span>Last ${fmtPts(r.dLast)}</span><span>15m ${fmtPts(r.d15)}</span><span>In ${fmtPts(r.dIn)}</span><span>Vol ${fmtVol(r.vol24)}</span>${r.trump!=null?`<span>Trump '24 ${fmtMargin(r.trump)}</span>`:""}</div>
+      <div class="mobilemoves num">${r.held&&r.held!=="new"?`<span>Held ${r.held}</span>`:""}<span>Last ${fmtPts(r.dLast)}</span><span>${esc(winLabel(true))} ${fmtPts(r.dWin)}</span><span>In ${fmtPts(r.dIn)}</span><span>Vol ${fmtVol(r.vol24)}</span>${r.trump!=null?`<span>Trump '24 ${fmtMargin(r.trump)}</span>`:""}</div>
       <div class="spark-flags" style="display:grid;gap:3px;min-width:0"><div class="flags">${r.flags.map(f=>`<span class="chip ${f.cls}">${f.t}</span>`).join("")}</div><div class="spark">${spark(r.id,color)}</div></div>
     </div>`}).join("");
   const head=$("table").querySelector(".row.head").outerHTML;
@@ -572,12 +612,13 @@ async function refresh(){
     for(const {meta,ev} of result.out){
       const r=buildRace(meta,ev);if(!r)continue;races.set(r.id,r);
       (history[r.id]=history[r.id]||[]).push([now,val(r)]);
-      if(history[r.id].length>400)history[r.id]=history[r.id].slice(-400);
+
     }
     // Drop history older than 12 hours
-    const cutoff=now-12*3600e3;for(const k in history){history[k]=history[k].filter(p=>p[0]>=cutoff);if(!history[k].length)delete history[k]}
+    for(const k in history){history[k]=compactHistory(history[k],now);if(!history[k].length)delete history[k]}
     store.set("et.history",history);
     lastOk=new Date();lastSecs=((performance.now()-t0)/1000).toFixed(1);
+    store.set("et.lastSeen",now);
     if(!goingIn||goingIn.date!==etDate())captureBaseline(false);
     for(const r of races.values())metrics(r);
     render();
@@ -591,6 +632,18 @@ async function refresh(){
   }
 }
 let lastSecs=null;
+
+// Keep every point from the last 6 hours, one per hour back to 72 hours, so "6h" and
+// "since last look" still work after the page has been closed for a while.
+function compactHistory(h,now){
+  const out=[],seen=new Set();
+  for(const p of h){
+    if(p[0]<now-72*3600e3)continue;
+    if(p[0]>=now-6*3600e3){out.push(p);continue}
+    const b=Math.floor(p[0]/3600e3);if(seen.has(b))continue;seen.add(b);out.push(p);
+  }
+  return out.slice(-700);
+}
 
 // ---------- Backfill: fill trend lines from price history ----------
 // Someone who opens the page mid-evening has no history yet, so sparklines are flat and the
@@ -607,42 +660,65 @@ function raceValueFrom(r,priceOf){
   if(r.d!=null)return dProbOf(outs,"p");
   return priceOf(r.leader.ticker);
 }
-function needsBackfill(r,now){
-  if(!r.series)return false;
-  if(!r.type.startsWith("ctl")&&r.vol24<2000)return false;      // skip thin markets
+function eligible(r){return !!r.series&&(r.type.startsWith("ctl")||r.vol24>=2000)}   // skip thin markets
+// What this page has already looked up, so switching windows doesn't fetch the same history twice.
+const fetched=new Map(); // id -> {minuteAt, hourlyFrom, hourlyAt}
+function needsMinute(r,now){
+  const f=fetched.get(r.id);if(f?.minuteAt>now-10*60e3)return false;
   const h=history[r.id]||[];
   return h.filter(p=>p[0]>=now-BF_HOURS*3600e3).length<BF_HOURS*60*0.4;
+}
+// Earliest time the hourly lookup should reach: 6 hours back, or back to "since last look".
+function hourlyFrom(now){
+  let t=now-7*3600e3;
+  if(compareFrom&&now-compareFrom<=72*3600e3)t=Math.min(t,compareFrom-3600e3);
+  return t;
+}
+function needsHourly(r,now){
+  const f=fetched.get(r.id);if(f?.hourlyAt>now-30*60e3&&f.hourlyFrom<=hourlyFrom(now)+3600e3)return false;
+  if(pointAt(r.id,now-6*3600e3,75)==null)return true;
+  if(compareFrom&&now-compareFrom>BF_HOURS*3600e3&&now-compareFrom<=72*3600e3&&pointAt(r.id,compareFrom,75)==null)return true;
+  return false;
+}
+// Only the markets that feed the value: both sides of a D/R race, every candidate in a three-way race.
+const neededOuts=r=>r.multi||r.d!=null?r.outs.filter(o=>r.multi||o.party==="D"||o.party==="R"):[r.leader];
+async function fetchValues(r,start,end,periodMin){
+  const series=await Promise.all(neededOuts(r).map(async o=>{
+    const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${periodMin}`);
+    return[o.ticker,(j.candlesticks||[]).map(c=>[c.end_period_ts,candleValue(c)]).filter(x=>x[1]!=null).sort((a,b)=>a[0]-b[0])];
+  }));
+  // Walk forward in time, carrying each market's last known price through quiet periods.
+  const times=[...new Set(series.flatMap(([,c])=>c.map(x=>x[0])))].sort((a,b)=>a-b);
+  const idx=new Map(series.map(([tk])=>[tk,0])),cs=new Map(series),last=new Map(),pts=[];
+  for(const t of times){
+    for(const [tk,c] of cs){let i=idx.get(tk);while(i<c.length&&c[i][0]<=t){last.set(tk,c[i][1]);i++}idx.set(tk,i)}
+    const v=raceValueFrom(r,tk=>last.has(tk)?last.get(tk):(cs.has(tk)?null:r.outs.find(o=>o.ticker===tk)?.p??null));
+    if(v!=null)pts.push([t*1000,v]);
+  }
+  return pts;
+}
+function mergePoints(id,pts,now){
+  if(!pts.length)return;
+  const have=history[id]||[];
+  const merged=have.concat(pts.filter(p=>!have.some(q=>Math.abs(q[0]-p[0])<45e3))).sort((a,b)=>a[0]-b[0]);
+  history[id]=compactHistory(merged,now);
 }
 async function backfill(){
   bf.started=true;
   const now=Date.now();
-  const todo=[...races.values()].filter(r=>needsBackfill(r,now));
-  if(!todo.length)return;
-  bf.running=true;bf.done=0;bf.total=todo.length;renderStatus();
-  // Round to the minute so several viewers ask for identical URLs and share the relay's cached copy.
-  const end=Math.floor(now/60000)*60,start=end-BF_HOURS*3600;
-  // Only the markets that feed the value: both sides of a D/R race, every candidate in a three-way race.
-  const needed=r=>r.multi||r.d!=null?r.outs.filter(o=>r.multi||o.party==="D"||o.party==="R"):[r.leader];
+  const jobs=[...races.values()].filter(eligible).map(r=>({r,minute:needsMinute(r,now),hourly:needsHourly(r,now)})).filter(j=>j.minute||j.hourly);
+  if(!jobs.length)return;
+  bf.running=true;bf.done=0;bf.total=jobs.length;renderStatus();
+  // Round times so several viewers ask for identical URLs and share the relay's cached copy.
+  const endM=Math.floor(now/60000)*60,startM=endM-BF_HOURS*3600;
+  const endH=Math.floor(now/3600e3)*3600+3600,startH=Math.floor(hourlyFrom(now)/3600e3)*3600;
   let sinceRender=0;
-  await pool(todo,3,async r=>{
+  await pool(jobs,3,async({r,minute,hourly})=>{
     try{
-      const series=await Promise.all(needed(r).map(async o=>{
-        const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=1`);
-        return[o.ticker,new Map((j.candlesticks||[]).map(c=>[c.end_period_ts,candleValue(c)]).filter(x=>x[1]!=null))];
-      }));
-      const byTicker=new Map(series);
-      // Walk minute by minute, carrying each market's last known price forward through quiet minutes.
-      const last=new Map(),pts=[];
-      for(let t=start+60;t<=end;t+=60){
-        for(const [tk,m] of byTicker)if(m.has(t))last.set(tk,m.get(t));
-        const v=raceValueFrom(r,tk=>last.has(tk)?last.get(tk):(byTicker.has(tk)?null:r.outs.find(o=>o.ticker===tk)?.p??null));
-        if(v!=null)pts.push([t*1000,v]);
-      }
-      if(pts.length){
-        const have=history[r.id]||[];
-        const merged=have.concat(pts.filter(p=>!have.some(q=>Math.abs(q[0]-p[0])<45e3))).sort((a,b)=>a[0]-b[0]);
-        history[r.id]=merged.slice(-400);
-      }
+      const f=fetched.get(r.id)||{};
+      if(hourly){mergePoints(r.id,await fetchValues(r,startH,endH,60),now);f.hourlyAt=now;f.hourlyFrom=startH*1000}
+      if(minute){mergePoints(r.id,await fetchValues(r,startM,endM,1),now);f.minuteAt=now}
+      fetched.set(r.id,f);
     }catch(e){}
     bf.done++;
     if(++sinceRender>=8){sinceRender=0;for(const x of races.values())metrics(x);render();renderStatus()}
@@ -783,7 +859,10 @@ async function keepAwake(on){
   }catch(e){}
 }
 document.addEventListener("visibilitychange",()=>{
-  if(document.visibilityState==="visible"){if(ui.auto){keepAwake(true);if(!busy&&(!lastOk||Date.now()-lastOk>55e3))refresh()}}
+  if(document.visibilityState==="visible"){
+    const before=compareFrom;newVisitCheck();
+    if(compareFrom!==before){bf.started=false;for(const r of races.values())metrics(r);render();if(!busy)refresh()}
+    if(ui.auto){keepAwake(true);if(!busy&&(!lastOk||Date.now()-lastOk>55e3))refresh()}}
 });
 function setPressed(seg,v){for(const b of $(seg).querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.v===v)}
 function saveUi(){store.set("et.ui",ui)}
@@ -792,9 +871,13 @@ $("table").addEventListener("click",e=>{const row=e.target.closest(".row[data-id
 for(const id of ["ctlS","ctlH"])$(id).addEventListener("click",()=>{const d=$(id).dataset.id;if(d)openDetail(d)});
 $("auto").onclick=()=>{ui.auto=!ui.auto;$("auto").setAttribute("aria-pressed",ui.auto);saveUi();keepAwake(ui.auto);if(ui.auto&&!busy)refresh();else schedule();renderStatus()};
 $("compet").onclick=()=>{ui.compet=!ui.compet;$("compet").setAttribute("aria-pressed",ui.compet);saveUi();render()};
+$("winSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.win=v;setPressed("winSeg",v);saveUi();
+  for(const r of races.values())metrics(r);render();
+  // Look up any history this window needs that isn't stored yet
+  if(!busy&&races.size&&!bf.running){bf.started=false;backfill()}};
 $("sortSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.sort=v;setPressed("sortSeg",v);saveUi();render()};
 $("typeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.type=v;setPressed("typeSeg",v);saveUi();render()};
-setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);
+setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);
 $("auto").setAttribute("aria-pressed",ui.auto);$("compet").setAttribute("aria-pressed",ui.compet);
 if(ui.auto)keepAwake(true);
 refresh();
