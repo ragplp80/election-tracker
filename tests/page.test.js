@@ -323,3 +323,27 @@ test("trend lines plot the leader's chance: a Republican pulling ahead rises in 
   assert.ok(gaEnd > gaStart, "Democratic leader slipping: line falls");
   assert.equal(pg.row("SENATEGA-26").querySelector(".spark polyline").getAttribute("stroke"), "var(--rep)", "colored by who gained");
 });
+
+test("a page left open for hours refills its recent history on Refresh", async (t) => {
+  const board = defaultBoard();
+  board.candles = (tk, ts) => { if (!tk.startsWith("SENATETX-26")) return null; const v = 0.6 + 0.1 * ((ts % 7200) / 7200); return tk.endsWith("-D") ? v : 1 - v; };
+  let offset = 0;
+  const pg = page(t, { board, storage: { "et.ui": { sort: "key", type: "all", compet: false, auto: false, win: "1h" } } });
+  pg.w.__testNow = () => Date.now() + offset;
+  await loaded(pg);
+  await waitFor(() => !/filling/.test(pg.text("#updated")), { timeout: 15000, what: "first fill" });
+  const cell = () => pg.row("SENATETX-26").querySelectorAll(".c")[1].textContent.trim();
+  const candleCalls = () => pg.log.filter((l) => /candlesticks/.test(l) && !l.startsWith("PAGE")).length;
+  // Refreshing right away needs nothing new
+  const before = candleCalls();
+  pg.d.getElementById("refresh").click();
+  await waitFor(() => !/Updating/.test(pg.d.getElementById("refresh").textContent), { what: "refresh" });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(candleCalls(), before, "no history lookups when nothing is missing");
+  // Two hours later, untouched
+  offset = 2 * 3600e3;
+  pg.d.getElementById("refresh").click();
+  await waitFor(() => cell() !== "–" && pg.w.eval("history['SENATETX-26'].filter(p=>p[0]>=clockNow()-3600e3).length") > 30, { timeout: 15000, what: "1h refilled" });
+  assert.match(cell(), /^(D|R) \+|^0$/);
+  noErrors(pg);
+});

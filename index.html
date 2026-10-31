@@ -982,7 +982,7 @@ async function refresh(){
     for(const r of races.values())metrics(r);
     render();
     if(detail){renderDetailMeta();if(detail.range==="1h"||detail.range==="6h")loadDetail()}
-    if(!bf.started)backfill();
+    if(!bf.running)backfill();   // fill any gaps (e.g. the page sat open without refreshing)
   }catch(e){
     $("updated").innerHTML=`<span class="err">Couldn't load the latest odds (${esc(e.message)}). Will try again.</span>`;
   }finally{
@@ -1013,7 +1013,7 @@ function compactHistory(h,now){
 // the daily baseline would be blank. Fill them from Kalshi's price history: minute prices for the
 // last 3 hours, hourly prices back past midnight (and "since last look"). Skips what's already here.
 const BF_HOURS=3;
-const bf={started:false,running:false,done:0,total:0};
+const bf={running:false,done:0,total:0};
 function raceValueFrom(r,priceAt){
   // Same calculation as the live value: Democratic share of the D/R pair, or the chance the
   // Republican loses in three-way races, or the leader's odds when no party is tagged.
@@ -1025,10 +1025,14 @@ function raceValueFrom(r,priceAt){
 }
 // What this page has already looked up, so switching windows doesn't fetch the same history twice.
 const fetched=new Map(); // id -> {minuteAt, hourlyFrom, hourlyAt}
+// Minute prices are needed when the last 3 hours have any stretch of 10+ minutes with no data:
+// the page was just opened, or sat open without refreshing.
 function needsMinute(r,now){
   const f=fetched.get(r.id);if(f?.minuteAt>now-10*60e3)return false;
-  const h=history[r.id]||[];
-  return h.filter(p=>p[0]>=now-BF_HOURS*3600e3).length<BF_HOURS*60*0.4;
+  const from=now-BF_HOURS*3600e3,gap=10*60e3;
+  let prev=from;
+  for(const [t] of history[r.id]||[]){if(t<from)continue;if(t-prev>gap)return true;prev=t}
+  return now-prev>gap;
 }
 // Earliest time the hourly lookup should reach: 6 hours back, or back to "since last look".
 function hourlyFrom(now){
@@ -1096,7 +1100,6 @@ async function loadHouseBase(){
   }catch(e){}
 }
 async function backfill(){
-  bf.started=true;
   loadHouseBase().then(()=>{if(houseBase)render()});
   const now=clockNow();
   const jobs=[...races.values()].filter(r=>r.series).map(r=>({r,minute:needsMinute(r,now),hourly:needsHourly(r,now)})).filter(j=>j.minute||j.hourly);
@@ -1301,7 +1304,7 @@ async function keepAwake(on){
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible"){
     const before=compareFrom;newVisitCheck();
-    if(compareFrom!==before){bf.started=false;for(const r of races.values())metrics(r);render();if(!busy)refresh()}
+    if(compareFrom!==before){for(const r of races.values())metrics(r);render();if(!busy)refresh()}
     if(ui.auto){keepAwake(true);if(!busy&&(!lastOk||clockNow()-lastOk>55e3))refresh()}}
 });
 function setPressed(seg,v){for(const b of $(seg).querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.v===v)}
@@ -1316,7 +1319,7 @@ $("compet").onclick=()=>{ui.compet=!ui.compet;$("compet").setAttribute("aria-pre
 $("winSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.win=v;setPressed("winSeg",v);saveUi();
   for(const r of races.values())metrics(r);render();
   // Look up any history this window needs that isn't stored yet
-  if(!busy&&races.size&&!bf.running){bf.started=false;backfill()}};
+  if(!busy&&races.size&&!bf.running)backfill()};
 $("sortSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.sort=v;setPressed("sortSeg",v);saveUi();render()};
 $("typeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.type=v;setPressed("typeSeg",v);saveUi();render()};
 setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);
