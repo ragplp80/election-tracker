@@ -270,7 +270,7 @@ footer a{color:var(--muted)}
     <button data-v="key" aria-pressed="true">Key races</button>
     <button data-v="movers" aria-pressed="false">Movers</button>
     <button data-v="upset" aria-pressed="false">Upset watch</button>
-    <button data-v="flips" aria-pressed="false">Flips</button>
+    <button data-v="flips" aria-pressed="false">Pickups</button>
     <button data-v="close" aria-pressed="false">Poll close</button>
   </div>
   <span class="seglabel">Move over</span>
@@ -325,7 +325,14 @@ const HELD_SEN={AL:"R",AK:"R",AR:"R",CO:"D",DE:"D",FL:"R",GA:"D",ID:"R",IL:"D",I
 const HELD_GOV={AL:"R",AK:"R",AZ:"D",AR:"R",CA:"D",CO:"D",CT:"D",FL:"R",GA:"R",HI:"D",ID:"R",IL:"D",IA:"R",KS:"D",ME:"D",MD:"D",MA:"D",MI:"D",MN:"D",NE:"R",NV:"R",NH:"R",NM:"D",NY:"D",OH:"R",OK:"R",OR:"D",PA:"D",RI:"D",SC:"R",SD:"R",TN:"R",TX:"R",VT:"R",WI:"D",WY:"R"};
 // House: 2024 presidential margins and 2024 winners by district, and which states redrew (house2024.js).
 const REDRAWN=new Set(HOUSE2024.redrawn);
-const ELECTION_DAY="2026-11-03";
+// Election night: the feed goes live at 5pm ET, the daily baseline moves to 6pm ET (just before the
+// first polls close), and both stay that way until 8am the next morning.
+const ELECTION_DAY="2026-11-03",NIGHT={live:17,baseline:18,day2:"2026-11-04",endsAt:8};
+const onElectionNight=fromHour=>{const d=etDate(),h=etHour();return(d===ELECTION_DAY&&h>=fromHour)||(d===NIGHT.day2&&h<NIGHT.endsAt)};
+
+// ---------- Clock ----------
+// All time-based logic reads this clock, so tests can run the page as if it were election night.
+const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.now();
 
 // ---------- Small helpers ----------
 const $=id=>document.getElementById(id);
@@ -345,8 +352,8 @@ const fmtVol=v=>v==null?"–":v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e3?Math.round(v/
 const fmtMargin=m=>m==null?"–":(m>0?"R+":"D+")+Math.abs(m).toFixed(0);
 const fmtClock=h=>{if(h==null)return"–";let hh=Math.floor(h)%24;const mm=Math.round((h%1)*60);const ap=hh>=12?"pm":"am";hh=hh%12||12;return hh+(mm?":"+String(mm).padStart(2,"0"):"")+ap};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const etDate=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
-const etHour=()=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"numeric",hour12:false}).formatToParts(new Date());const h=+p.find(x=>x.type==="hour").value%24,m=+p.find(x=>x.type==="minute").value;return h+m/60};
+const etDate=()=>new Date(clockNow()).toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+const etHour=()=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"numeric",hour12:false}).formatToParts(new Date(clockNow()));const h=+p.find(x=>x.type==="hour").value%24,m=+p.find(x=>x.type==="minute").value;return h+m/60};
 
 async function kget(path){
   for(let i=0;i<2;i++){
@@ -368,10 +375,10 @@ async function pool(items,n,fn,onProgress){
 }
 
 // ---------- Discovering the races ----------
-// Kalshi series naming (from the connection test): SENATETX, GOVPARTYAZ, HOUSEPA7, CONTROLS/CONTROLH.
+// Fallback only: used when the server snapshot is unavailable. Series naming lives in core.js.
 async function discover(onProgress){
   const cached=store.get("et.series2",null);
-  if(cached&&Date.now()-cached.at<6*3600e3&&cached.list.length)return cached.list;
+  if(cached&&clockNow()-cached.at<6*3600e3&&cached.list.length)return cached.list;
   const j=await kget("/series?category=Elections");
   const cands=(j.series||[]).map(s=>({series:s.ticker,...classify(s.ticker)})).filter(s=>s.type&&s.type!=="seats");
   // Keep only series that have an open event. Prefer the party-style series when a race has two.
@@ -390,7 +397,7 @@ async function discover(onProgress){
     if(!prev||c.pref>prev.pref)best.set(key,c);
   }
   const list=[...best.values()].map(({series,type,st,dist,special})=>({series,type,st,dist,special}));
-  if(!incomplete)store.set("et.series2",{at:Date.now(),list});   // don't remember a list with gaps
+  if(!incomplete)store.set("et.series2",{at:clockNow(),list});   // don't remember a list with gaps
   return list;
 }
 
@@ -447,7 +454,7 @@ function buildRace(meta,ev){
 
 // ---------- State ----------
 let series=[],races=new Map(),prevSnap=new Map(),busy=false,lastOk=null,errCount=0;
-let houseSeats=null; // {buckets:[{lo,hi,mid,p,label}], vol}
+let houseSeats=null; // {buckets:[{lo,hi,mid,p,label,ticker}], id}
 let history=store.get("et.history",{});           // id -> [[t, value]]
 // Daily baseline: each race's odds at midnight Eastern, read from price history, so it is the same
 // moment for everyone no matter when the page was opened. On election night it moves to 6pm ET.
@@ -456,12 +463,8 @@ function etTs(dateStr,hour){
   const h=+new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",hourCycle:"h23"}).format(new Date(t));
   let diff=hour-h;if(diff>12)diff-=24;if(diff<-12)diff+=24;return t+diff*3600e3;
 }
-function baseAt(){
-  const d=etDate(),h=etHour();
-  if((d===ELECTION_DAY&&h>=18)||(d==="2026-11-04"&&h<8))return etTs(ELECTION_DAY,18);
-  return etTs(d,0);
-}
-const baseLabel=()=>baseAt()===etTs(ELECTION_DAY,18)?"6pm":"12am";
+function baseAt(){return onElectionNight(NIGHT.baseline)?etTs(ELECTION_DAY,NIGHT.baseline):etTs(etDate(),0)}
+const baseLabel=()=>onElectionNight(NIGHT.baseline)?"6pm":"12am";
 // Which side leads for a tracked value v (Democratic share, or chance the Republican loses).
 function sideOf(r,v){return v>=0.5?(r.multi?(r.outs.find(o=>o.party!=="R")?.party==="I"?"I":"D"):"D"):"R"}
 function baseFor(r){
@@ -469,6 +472,7 @@ function baseFor(r){
   const v=pointAt(r.id,baseAt(),75);
   return v==null?null:{v,party:sideOf(r,v),p:Math.max(v,1-v)};
 }
+for(const k of ["et.goingIn","et.series","et.batchOK"])try{localStorage.removeItem(k)}catch(e){}   // from older versions
 const ui=store.get("et.ui",{sort:"key",type:"all",compet:false,auto:false});
 if(!ui.win)ui.win="1h";
 // "Since last look": the last time this device had the page open, at least 30 minutes ago.
@@ -476,7 +480,7 @@ if(!ui.win)ui.win="1h";
 let compareFrom=store.get("et.compareFrom",null);
 function newVisitCheck(){
   const seen=store.get("et.lastSeen",null);
-  if(seen&&Date.now()-seen>30*60e3&&seen!==compareFrom){compareFrom=seen;store.set("et.compareFrom",seen)}
+  if(seen&&clockNow()-seen>30*60e3&&seen!==compareFrom){compareFrom=seen;store.set("et.compareFrom",seen)}
 }
 newVisitCheck();
 const WIN={"15m":{mins:15,tol:5,big:0.05,short:"15m"},"1h":{mins:60,tol:15,big:0.05,short:"1h"},
@@ -486,7 +490,7 @@ function winLabel(short,which){
   const w=which||ui.win;
   if(w!=="last")return WIN[w].short;
   if(!compareFrom)return short?"Since last":"Since last look";
-  const d=new Date(compareFrom),same=d.toDateString()===new Date().toDateString();
+  const d=new Date(compareFrom),same=d.toDateString()===new Date(clockNow()).toDateString();
   const t=d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}).replace(":00","").replace(" ","").toLowerCase();
   return"Since "+(same?"":d.toLocaleDateString([], {weekday:"short"})+" ")+t;
 }
@@ -503,15 +507,15 @@ function pointAt(id,t,tolMins){
   if(after&&after[0]-t<=Math.min(tolMins,10)*60e3)return after[1];
   return null;
 }
-function pointAgo(id,mins,tol){return pointAt(id,Date.now()-mins*60e3,tol??Math.max(5,mins/4))}
+function pointAgo(id,mins,tol){return pointAt(id,clockNow()-mins*60e3,tol??Math.max(5,mins/4))}
 function winStart(){
-  if(ui.win==="last"&&compareFrom&&Date.now()-compareFrom<=72*3600e3)return compareFrom;
+  if(ui.win==="last"&&compareFrom&&clockNow()-compareFrom<=72*3600e3)return compareFrom;
   const mins=ui.win==="last"?360:WIN[ui.win].mins;
-  return Date.now()-mins*60e3;
+  return clockNow()-mins*60e3;
 }
 function winMove(r,v){
   if(ui.win==="24h")return r.d24h;
-  if(ui.win==="last"){if(!compareFrom||Date.now()-compareFrom>72*3600e3)return null;const p=pointAt(r.id,compareFrom,WIN.last.tol);return p!=null?v-p:null}
+  if(ui.win==="last"){if(!compareFrom||clockNow()-compareFrom>72*3600e3)return null;const p=pointAt(r.id,compareFrom,WIN.last.tol);return p!=null?v-p:null}
   const w=WIN[ui.win];const p=pointAgo(r.id,w.mins,w.tol);return p!=null?v-p:null;
 }
 function metrics(r){
@@ -532,15 +536,24 @@ function metrics(r){
   if(gi){
     const nowSide=sideOf(r,v),pNow=Math.max(v,1-v);
     r.upsetLoss=gi.p-(nowSide===gi.party?pNow:1-pNow);               // how far today's starting favorite has slipped
-    if(nowSide!==gi.party&&Math.abs(v-0.5)>=0.02)r.flags.push({k:"upset",t:"Lead change",cls:nowSide==="R"?"upset":"upset dfav"});
+    if(nowSide!==gi.party&&Math.abs(v-0.5)>=0.02)r.flags.push({k:"leadToday",t:"Lead change",cls:nowSide==="R"?"upset":"upset dfav"});
     if(gi.p<0.9&&pNow>=0.9)r.flags.push({k:"call",t:"90%+ now",cls:"call"});
   } else r.upsetLoss=0;
   const prevLeader=prevSnap.get(r.id+":leader");
-  if(prevLeader&&prevLeader!==(r.leader.party+r.leader.name))r.flags.push({k:"flip",t:"Lead flip",cls:"flip"});
+  if(prevLeader&&prevLeader!==(r.leader.party+r.leader.name))r.flags.push({k:"leadJust",t:"Just flipped",cls:"flip"});
   if(r.dWin!=null&&Math.abs(r.dWin)>=WIN[ui.win].big&&!r.thin)r.flags.push({k:"move",t:"Big move",cls:"move"});
   r.pickup=(r.held==="D"||r.held==="R")&&(r.leader.party==="D"||r.leader.party==="R"||r.leader.party==="I")&&r.leader.party!==r.held&&r.leader.p>=0.5?r.leader.party:null;
   if(r.pickup)r.flags.unshift({k:"pickup",t:r.pickup+" pickup",cls:"pick"+r.pickup});
   if(r.thin)r.flags.push({k:"thin",t:"Thin",cls:"thin"});
+}
+
+// One row per race: when Kalshi lists several markets for the same race, keep the most-traded.
+// Control markets: the 2026 ones only.
+function pickRaces(){
+  const all=[...races.values()],best=new Map();
+  for(const r of all){if(r.type.startsWith("ctl"))continue;const b=best.get(r.key);if(!b||r.vol24>b.vol24)best.set(r.key,r)}
+  const ctl=t=>all.find(r=>r.type===t&&/-2026$/.test(r.id))||all.find(r=>r.type===t)||null;
+  return{list:[...best.values()],ctlS:ctl("ctlS"),ctlH:ctl("ctlH")};
 }
 
 // ---------- Balance of power ----------
@@ -574,10 +587,9 @@ function seatStats(hs){
   const pMaj=ps.reduce((s,b)=>s+(b.mid>=218?b.q:0),0);
   return{mean,median:pct(0.5),p10:pct(0.1),p90:pct(0.9),pMaj};
 }
-function renderBalance(all){
-  // ----- Senate
-  const sen=[...new Map(all.filter(r=>r.type==="senate").map(r=>[r.st,r])).values()];
-  const byState=new Map(sen.map(r=>[r.st,r]));
+function renderBalance(list,ctlH){
+  // ----- Senate (one race per state: no state has two Senate seats up in 2026)
+  const byState=new Map(list.filter(r=>r.type==="senate").map(r=>[r.st,r]));
   const segs={dsafe:0,dlik:0,dlean:0,dtoss:0,ind:0,rtoss:0,rlean:0,rlik:0,rsafe:0};
   const fav={D:SEN_NOT_UP.D,R:SEN_NOT_UP.R,I:0};let expD=SEN_NOT_UP.D,noMarket=[];
   const fav0={D:SEN_NOT_UP.D,R:SEN_NOT_UP.R,I:0};let expD0=SEN_NOT_UP.D;const changed=[];   // at today's baseline
@@ -609,9 +621,8 @@ function renderBalance(all){
     ${tosses.length?`<div class="tosses"><span class="lab">Toss-ups</span>${tosses.map(r=>{const c=r.leader.party==="D"?"d":r.leader.party==="R"?"r":"i";return`<button class="tchip" data-open="${esc(r.id)}">${esc(r.st)} <span class="${c}">${r.leader.party==="X"?"":r.leader.party+" "}${fmtPct(r.leader.p)}</span></button>`}).join("")}</div>`:""}`;
 
   // ----- House
-  const ctlH=all.find(r=>r.type==="ctlH");
   const st=houseSeats&&seatStats(houseSeats);
-  const dist=all.filter(r=>r.type==="house");
+  const dist=list.filter(r=>r.type==="house");
   const cnt={D:{safe:0,lik:0,lean:0,toss:0},R:{safe:0,lik:0,lean:0,toss:0}};
   for(const r of dist){const pty=r.leader.party==="D"?"D":r.leader.party==="R"?"R":null;if(pty)cnt[pty][band(r.leader.p)]++}
   const pickD=dist.filter(r=>r.pickup==="D").length,pickR=dist.filter(r=>r.pickup==="R").length;
@@ -644,7 +655,7 @@ function legend(items,party){
 }
 
 // ---------- What changed feed ----------
-function liveNight(){const d=etDate(),h=etHour();return(d===ELECTION_DAY&&h>=17)||(d==="2026-11-04"&&h<8)}
+const liveNight=()=>onElectionNight(NIGHT.live);
 function feedLabel(r){return r.type==="gov"?r.label+" Gov":r.type==="senate"?r.label+" Sen":r.label}
 function sideName(r,side){
   if(r.type.startsWith("ctl"))return side==="D"?"Democrats":"Republicans";
@@ -654,7 +665,7 @@ function sideName(r,side){
 }
 function sideParty(r,side){return side==="D"&&r.multi?(r.outs.find(o=>o.party!=="R")?.party==="I"?"I":"D"):side}
 function buildFeed(list){
-  const now=Date.now(),live=liveNight();
+  const now=clockNow(),live=liveNight();
   const lastLook=compareFrom&&now-compareFrom<=72*3600e3?compareFrom:null;
   const since=Math.min(lastLook??now,now-24*3600e3);
   const win=live?15*60e3:4*3600e3,thr=live?0.04:0.05;
@@ -716,7 +727,7 @@ function buildFeed(list){
   return{items:out.slice(0,80),since,lastLook,live};
 }
 function feedTime(t,t0){
-  const d=new Date(t),today=d.toDateString()===new Date().toDateString();
+  const d=new Date(t),today=d.toDateString()===new Date(clockNow()).toDateString();
   const tm=x=>new Date(x).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}).replace(":00","").replace(" ","").toLowerCase();
   const day=today?"":d.toLocaleDateString([], {weekday:"short"})+" ";
   return t0&&t-t0>=50*60e3?day+tm(t0)+"–"+tm(t):day+tm(t);
@@ -724,10 +735,8 @@ function feedTime(t,t0){
 // Check report (open the page with ?check): the feed next to an independent source, Kalshi's own
 // price from 24 hours ago, plus what this device's history shows, so the feed can be verified.
 function checkReport(){
-  const now=Date.now(),day=now-24*3600e3;
-  const all=[...races.values()];
-  const best=new Map();for(const r of all){if(r.type.startsWith("ctl")&&!/-2026$/.test(r.id))continue;const b=best.get(r.key||r.type);if(!b||r.vol24>b.vol24)best.set(r.key||r.type,r)}
-  const list=[...best.values()];
+  const now=clockNow(),day=now-24*3600e3;
+  const {list:picked,ctlS,ctlH}=pickRaces(),list=[ctlS,ctlH,...picked].filter(Boolean);
   const f=buildFeed(list);
   const r3=v=>v==null?null:Math.round(v*1000)/1000,tm=t=>new Date(t).toISOString().slice(5,16);
   return{v:"check1",at:new Date(now).toISOString(),lastLook:compareFrom?new Date(compareFrom).toISOString():null,live:f.live,
@@ -741,7 +750,7 @@ function checkReport(){
 }
 function renderFeed(list){
   const f=buildFeed(list);
-  const sinceTxt=f.lastLook&&f.lastLook<Date.now()-24*3600e3?"Since your last look ("+feedTime(f.lastLook)+")":"Past 24 hours"+(f.lastLook?" · New = since your last look at "+feedTime(f.lastLook):"");
+  const sinceTxt=f.lastLook&&f.lastLook<clockNow()-24*3600e3?"Since your last look ("+feedTime(f.lastLook)+")":"Past 24 hours"+(f.lastLook?" · New = since your last look at "+feedTime(f.lastLook):"");
   $("feedSub").textContent=(f.live?"Live · ":"")+sinceTxt;
   if(!f.items.length){$("feedList").innerHTML=`<div class="feedempty">${bf.running?"Looking through price history…":"No lead changes or big moves in this period."}</div>`;return}
   const show=ui.feedAll?f.items:f.items.slice(0,6);
@@ -804,17 +813,11 @@ function renderControl(elId,title,r){
     <div class="spark ctlspark">${spark(r,{w:300,h:40})}</div>`;
 }
 function render(){
-  const all=[...races.values()];
-  const ctlS=all.find(r=>r.type==="ctlS"&&/-2026$/.test(r.id))||all.find(r=>r.type==="ctlS");
-  const ctlH=all.find(r=>r.type==="ctlH"&&/-2026$/.test(r.id))||all.find(r=>r.type==="ctlH");
+  const picked=pickRaces(),{ctlS,ctlH}=picked;let list=picked.list;
   renderControl("ctlS","Senate control",ctlS);renderControl("ctlH","House control",ctlH);
-  // When Kalshi has more than one market for the same race, show only the most-traded one.
-  const best=new Map();
-  for(const r of all){if(r.type.startsWith("ctl"))continue;const b=best.get(r.key);if(!b||r.vol24>b.vol24)best.set(r.key,r)}
-  let list=[...best.values()];
-  renderBalance([...list,...all.filter(r=>r.type.startsWith("ctl"))]);
-  renderFeed([...all.filter(r=>r.type.startsWith("ctl")&&/-2026$/.test(r.id)),...list]);
-  $("nUpset").textContent=list.filter(r=>r.flags.some(f=>f.k==="upset")).length;
+  renderBalance(list,ctlH);
+  renderFeed([ctlS,ctlH,...list].filter(Boolean));
+  $("nUpset").textContent=list.filter(r=>r.flags.some(f=>f.k==="leadToday")).length;
   $("nMove").textContent=list.filter(r=>r.flags.some(f=>f.k==="move")).length;
   $("nMoveLab").textContent="Big moves ("+winLabel(true).toLowerCase()+")";
   const wh=$("winHead");if(wh)wh.textContent=winLabel(true);
@@ -846,8 +849,7 @@ function render(){
   list.sort(sorters[ui.sort]);
   $("count").textContent=list.length+" races";
   const rows=list.map(r=>{
-    const hot=r.flags.some(f=>f.k==="move"||f.k==="upset"||f.k==="flip");
-    const color=r.d!=null?(r.d>=0.5?"var(--dem)":"var(--rep)"):"var(--ind)";
+    const hot=r.flags.some(f=>f.k==="move"||f.k==="leadToday"||f.k==="leadJust");
     return`<div class="row${hot?" hot":""}" data-id="${esc(r.id)}" role="button" tabindex="0" aria-label="${esc(r.label+" "+r.sub)}: open chart">
       <div class="race"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></div>
       <div class="heldcell">${heldBadge(r.held)}</div>
@@ -868,43 +870,25 @@ function render(){
 function renderStatus(){
   const t=lastOk?lastOk.toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"}):"–";
   if(savedFrom&&!lastOk){$("updated").innerHTML=`Showing saved odds from <b>${new Date(savedFrom).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b> · updating…`;return}
-  let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s${lastMode==="fast"||lastMode==="snapshot"?", fast":""})</span>`:""}`;
+  let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s${lastMode==="snapshot"?", fast":""})</span>`:""}`;
   if(bf.running)s+=` · filling in trends <span class="num">${bf.done}/${bf.total}</span>`;
   if(errCount)s+=` · <span class="err">${errCount} race${errCount>1?"s":""} didn't load</span>`;
-  if(ui.auto&&nextAt)s+=` · next in <b class="num" id="cd">${Math.max(0,Math.round((nextAt-Date.now())/1000))}s</b>`;
+  if(ui.auto&&nextAt)s+=` · next in <b class="num" id="cd">${Math.max(0,Math.round((nextAt-clockNow())/1000))}s</b>`;
   $("updated").innerHTML=s;
   $("baseline").innerHTML=`Today: since <b>${baseLabel()} ET</b>`;
 }
 
 // ---------- Refresh cycle ----------
-// Fast path: after one full sweep we know every market ticker, so later refreshes ask Kalshi
-// for all of them in a few batched calls. A full per-race sweep still runs every 10th refresh
-// (to catch new markets) and whenever a batch comes back incomplete.
-let eventMeta=new Map(),marketTickers=[],refreshN=0,batchOK=store.get("et.batchOK",true),lastMode="";
+// Fallback when the snapshot is down: ask for each race's events through the relay.
+let lastMode="";
 async function fullSweep(prog){
   const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true&status=open`);return{meta,events:j.events||[]}},prog);
-  const out=[];let errs=0;eventMeta=new Map();const tk=[];
-  for(const x of res){
-    if(!x||x.error){errs++;continue}
-    for(const ev of x.events){eventMeta.set(ev.event_ticker,x.meta);for(const m of ev.markets||[])if(m.status!=="finalized")tk.push(m.ticker);out.push({meta:x.meta,ev})}
-  }
-  marketTickers=tk;
+  const out=[];let errs=0;
+  for(const x of res){if(!x||x.error){errs++;continue}for(const ev of x.events)out.push({meta:x.meta,ev})}
   return{out,errs};
 }
-async function batchSweep(prog){
-  const chunks=[];for(let i=0;i<marketTickers.length;i+=40)chunks.push(marketTickers.slice(i,i+40));
-  const res=await pool(chunks,4,c=>kget(`/markets?tickers=${c.join(",")}&limit=1000`),prog);
-  const byEvent=new Map();let got=0,errs=0;
-  for(const j of res){
-    if(!j||j.error){errs++;continue}
-    for(const m of j.markets||[]){got++;if(!byEvent.has(m.event_ticker))byEvent.set(m.event_ticker,[]);byEvent.get(m.event_ticker).push(m)}
-  }
-  if(errs||got<marketTickers.length*0.9)return null;   // incomplete: caller falls back to a full sweep
-  const out=[];for(const [et,markets] of byEvent){const meta=eventMeta.get(et);if(meta)out.push({meta,ev:{event_ticker:et,markets}})}
-  return{out,errs:0};
-}
 // One call for everything: the server keeps a shared copy, refreshed about every 15 seconds.
-// If it fails, the page falls back to asking for each race itself (the code above).
+// If it fails, the page falls back to asking for each race itself (fullSweep above).
 let snapFailedAt=0,savedFrom=null;
 async function snapshotSweep(){
   const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),55000);
@@ -918,11 +902,11 @@ async function snapshotSweep(){
 }
 // Save the latest odds on this device so the next visit can show them instantly.
 function saveSnapshot(out,seats){
-  try{localStorage.setItem("et.snap",JSON.stringify({at:Date.now(),out:out.map(x=>({meta:x.meta,ev:Core.slimEvent(x.ev)})),seats:seats?Core.slimEvent(seats):null}))}catch(e){}
+  try{localStorage.setItem("et.snap",JSON.stringify({at:clockNow(),out:out.map(x=>({meta:x.meta,ev:Core.slimEvent(x.ev)})),seats:seats?Core.slimEvent(seats):null}))}catch(e){}
 }
 function paintSaved(){
   const snap=store.get("et.snap",null);
-  if(!snap||!Array.isArray(snap.out)||Date.now()-snap.at>72*3600e3)return false;
+  if(!snap||!Array.isArray(snap.out)||clockNow()-snap.at>72*3600e3)return false;
   for(const {meta,ev} of snap.out){const r=buildRace(meta,ev);if(r)races.set(r.id,r)}
   if(snap.seats)houseSeats=parseSeatMarket({events:[snap.seats]});
   if(!races.size)return false;
@@ -937,35 +921,28 @@ async function refresh(){
   const t0=performance.now();
   try{
     let result=null;
-    if(Date.now()-snapFailedAt>5*60e3){
+    if(clockNow()-snapFailedAt>5*60e3){
       try{result=await snapshotSweep();lastMode="snapshot";if(result.seats)houseSeats=parseSeatMarket({events:[result.seats]})}
-      catch(e){snapFailedAt=Date.now();result=null}
+      catch(e){snapFailedAt=clockNow();result=null}
     }
     if(!result&&!series.length){
       $("loading")&&($("loading").textContent="Loading every Senate, governor and House race…");
       series=await discover(prog);
     }
-    if(!result&&batchOK&&marketTickers.length&&refreshN%10!==0){
-      result=await batchSweep(prog);
-      if(!result){batchOK=false;store.set("et.batchOK",false)}
-      else lastMode="fast";
-    }
-    if(!result){result=await fullSweep(prog);lastMode="full";
-      if(!store.get("et.batchOK",true)&&refreshN%10===0){batchOK=true;store.set("et.batchOK",true)} }  // give batching another chance now and then
-    refreshN++;
+    if(!result){result=await fullSweep(prog);lastMode="full"}
     if(lastMode!=="snapshot"){try{houseSeats=parseSeatMarket(await kget("/events?series_ticker=KXDHOUSESEATS&with_nested_markets=true&status=open"))}catch(e){}}
     // Remember the previous refresh for "Last" moves and lead flips
     for(const r of races.values()){prevSnap.set(r.id,val(r));prevSnap.set(r.id+":leader",r.leader.party+r.leader.name)}
-    errCount=result.errs;const now=Date.now();
+    errCount=result.errs;const now=clockNow();
     for(const {meta,ev} of result.out){
       const r=buildRace(meta,ev);if(!r)continue;races.set(r.id,r);
       (history[r.id]=history[r.id]||[]).push([now,val(r)]);
 
     }
-    // Drop history older than 12 hours
+    // Trim history: every point for 6 hours, one per hour back to 72 hours
     for(const k in history){history[k]=compactHistory(history[k],now);if(!history[k].length)delete history[k]}
     store.set("et.history",history);
-    lastOk=new Date();lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
+    lastOk=new Date(clockNow());lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
     saveSnapshot(result.out,lastMode==="snapshot"?result.seats:null);
     store.set("et.lastSeen",now);
     for(const r of races.values())metrics(r);
@@ -994,21 +971,20 @@ function compactHistory(h,now){
 }
 
 // ---------- Backfill: fill trend lines from price history ----------
-// Someone who opens the page mid-evening has no history yet, so sparklines are flat and the
-// 15-minute column is empty. Pull the last 3 hours of 1-minute prices for each active race
-// and merge them in. Devices that have been open all along already have the points and skip it.
+// A device that wasn't open all day has gaps in its history, so trend lines, the move column and
+// the daily baseline would be blank. Fill them from Kalshi's price history: minute prices for the
+// last 3 hours, hourly prices back past midnight (and "since last look"). Skips what's already here.
 const BF_HOURS=3;
 const bf={started:false,running:false,done:0,total:0};
-function raceValueFrom(r,priceOf){
+function raceValueFrom(r,priceAt){
   // Same calculation as the live value: Democratic share of the D/R pair, or the chance the
   // Republican loses in three-way races, or the leader's odds when no party is tagged.
-  const outs=r.outs.map(o=>({party:o.party,p:priceOf(o.ticker)}));
+  const outs=r.outs.map(o=>({party:o.party,p:priceAt(o.ticker)}));
   if(outs.some(o=>o.p==null))return null;
   if(r.multi){const tot=outs.reduce((s,o)=>s+o.p,0),rp=outs.find(o=>o.party==="R")?.p;return tot>0&&rp!=null?1-rp/tot:null}
   if(r.d!=null)return dProbOf(outs,"p");
-  return priceOf(r.leader.ticker);
+  return priceAt(r.leader.ticker);
 }
-function eligible(r){return !!r.series}
 // What this page has already looked up, so switching windows doesn't fetch the same history twice.
 const fetched=new Map(); // id -> {minuteAt, hourlyFrom, hourlyAt}
 function needsMinute(r,now){
@@ -1031,7 +1007,7 @@ function needsHourly(r,now){
 // Only the markets that feed the value: both sides of a D/R race, every candidate in a three-way race.
 const neededOuts=r=>r.multi||r.d!=null?r.outs.filter(o=>r.multi||o.party==="D"||o.party==="R"):[r.leader];
 async function fetchValues(r,start,end,periodMin){
-  const series=await Promise.all(neededOuts(r).map(async o=>{
+  const markets=await Promise.all(neededOuts(r).map(async o=>{
     const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${periodMin}`);
     const cs=(j.candlesticks||[]).map(c=>[c.end_period_ts,candleValue(c),num(c.price?.previous_dollars)]).filter(x=>x[1]!=null).sort((a,b)=>a[0]-b[0]);
     // Price before the first reported period: Kalshi's "previous" price, else the first price seen,
@@ -1041,10 +1017,10 @@ async function fetchValues(r,start,end,periodMin){
   }));
   // Kalshi only reports periods with activity. Walk a regular grid (every minute or hour) and carry
   // each market's last price forward, so quiet races still have a value at every point in time.
-  const step=periodMin*60,now=Math.floor(Date.now()/1000),pts=[];
-  const idx=new Map(series.map(([tk])=>[tk,0])),last=new Map(series.map(([tk,,first])=>[tk,first]));
+  const step=periodMin*60,now=Math.floor(clockNow()/1000),pts=[];
+  const idx=new Map(markets.map(([tk])=>[tk,0])),last=new Map(markets.map(([tk,,first])=>[tk,first]));
   for(let t=Math.ceil(start/step)*step;t<=Math.min(end,now);t+=step){
-    for(const [tk,cs] of series){let i=idx.get(tk);while(i<cs.length&&cs[i][0]<=t){last.set(tk,cs[i][1]);i++}idx.set(tk,i)}
+    for(const [tk,cs] of markets){let i=idx.get(tk);while(i<cs.length&&cs[i][0]<=t){last.set(tk,cs[i][1]);i++}idx.set(tk,i)}
     const v=raceValueFrom(r,tk=>last.has(tk)?last.get(tk):r.outs.find(o=>o.ticker===tk)?.p??null);
     if(v!=null)pts.push([t*1000,v]);
   }
@@ -1066,7 +1042,7 @@ function mergePoints(id,pts,now){
 let houseBase=null; // {at, median, mean}
 async function loadHouseBase(){
   const at=baseAt();
-  if(!houseSeats||houseBase?.at===at||at>Date.now())return;
+  if(!houseSeats||houseBase?.at===at||at>clockNow())return;
   const s0=Math.floor(at/3600e3)*3600-3*3600,e0=Math.floor(at/3600e3)*3600+3600;
   try{
     const ps=await Promise.all(houseSeats.buckets.map(async b=>{
@@ -1083,8 +1059,8 @@ async function loadHouseBase(){
 async function backfill(){
   bf.started=true;
   loadHouseBase().then(()=>{if(houseBase)render()});
-  const now=Date.now();
-  const jobs=[...races.values()].filter(eligible).map(r=>({r,minute:needsMinute(r,now),hourly:needsHourly(r,now)})).filter(j=>j.minute||j.hourly);
+  const now=clockNow();
+  const jobs=[...races.values()].filter(r=>r.series).map(r=>({r,minute:needsMinute(r,now),hourly:needsHourly(r,now)})).filter(j=>j.minute||j.hourly);
   if(!jobs.length)return;
   bf.running=true;bf.done=0;bf.total=jobs.length;renderStatus();
   // Round times so several viewers ask for identical URLs and share the relay's cached copy.
@@ -1174,7 +1150,7 @@ function renderDetailMeta(){
 async function loadDetail(){
   const r=races.get(detail.id);if(!r)return;
   const token=++detail.token;const rg=RANGES.find(x=>x.k===detail.range);
-  const end=Math.floor(Date.now()/1000),start=end-rg.secs;
+  const end=Math.floor(clockNow()/1000),start=end-rg.secs;
   $("chartbox").innerHTML='<div class="chartmsg">Loading price history…</div>';
   const outs=detailOutcomes(r);
   try{
@@ -1182,7 +1158,7 @@ async function loadDetail(){
       const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${rg.period}`);
       const pts=(j.candlesticks||[]).map(c=>[c.end_period_ts*1000,candleValue(c)]).filter(p=>p[1]!=null);
       // End the line at the live price so it matches the table
-      pts.push([Date.now(),o.p]);
+      pts.push([clockNow(),o.p]);
       return{o,color:partyColor(o,i),pts};
     }));
     if(!detail||token!==detail.token)return;
@@ -1232,8 +1208,8 @@ window.addEventListener("resize",()=>{if(detail?.series)drawChart()});
 
 // ---------- Auto refresh, wake lock, controls ----------
 let timer=null,nextAt=null,wake=null;
-function schedule(){clearTimeout(timer);nextAt=null;if(!ui.auto)return;nextAt=Date.now()+60e3;timer=setTimeout(refresh,60e3)}
-setInterval(()=>{const cd=$("cd");if(cd&&nextAt)cd.textContent=Math.max(0,Math.round((nextAt-Date.now())/1000))+"s"},1000);
+function schedule(){clearTimeout(timer);nextAt=null;if(!ui.auto)return;nextAt=clockNow()+60e3;timer=setTimeout(refresh,60e3)}
+setInterval(()=>{const cd=$("cd");if(cd&&nextAt)cd.textContent=Math.max(0,Math.round((nextAt-clockNow())/1000))+"s"},1000);
 async function keepAwake(on){
   try{
     if(on&&"wakeLock" in navigator&&document.visibilityState==="visible"){wake=await navigator.wakeLock.request("screen")}
@@ -1244,7 +1220,7 @@ document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible"){
     const before=compareFrom;newVisitCheck();
     if(compareFrom!==before){bf.started=false;for(const r of races.values())metrics(r);render();if(!busy)refresh()}
-    if(ui.auto){keepAwake(true);if(!busy&&(!lastOk||Date.now()-lastOk>55e3))refresh()}}
+    if(ui.auto){keepAwake(true);if(!busy&&(!lastOk||clockNow()-lastOk>55e3))refresh()}}
 });
 function setPressed(seg,v){for(const b of $(seg).querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.v===v)}
 function saveUi(){store.set("et.ui",ui)}
