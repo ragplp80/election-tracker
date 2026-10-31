@@ -12,6 +12,8 @@
     if (t === "CONTROLS") return { type: "ctlS" };
     if (t === "CONTROLH") return { type: "ctlH" };
     if (t === "KXDHOUSESEATS") return { type: "seats" };
+    // One series holding many districts (events KXHOUSERACE-NC03-26, -KS03-26, ...): see eventMeta
+    if (t === "KXHOUSERACE") return { type: "houseMulti", pref: 1.5 };
     if ((m = t.match(/^SENATE([A-Z]{2})(S?)$/)) && STATES[m[1]]) return { type: "senate", st: m[1], special: !!m[2], pref: 2 };
     if ((m = t.match(/^KXSENATE([A-Z]{2})$/)) && STATES[m[1]]) return { type: "senate", st: m[1], special: false, pref: 1 };
     if ((m = t.match(/^GOVPARTY-?([A-Z]{2})$/)) && STATES[m[1]]) return { type: "gov", st: m[1], pref: 2 };
@@ -27,6 +29,15 @@
     if ((m = t.match(/^KX([A-Z]{2})(\d{1,2})PERSON$/)) && STATES[m[1]]) return { type: "house", st: m[1], dist: +m[2], pref: 0 };
     if (t === "KXALASKAHOUSE") return { type: "house", st: "AK", dist: 0, pref: 0 };
     return null;
+  }
+
+  // The race an event belongs to. Usually the series says it; for a multi-district series the
+  // district comes from the event ticker (KXHOUSERACE-NC03-26 -> NC-3). Null if it can't be read.
+  function eventMeta(meta, ev) {
+    if (meta.type !== "houseMulti") return meta;
+    const m = String(ev.event_ticker || "").match(/-([A-Z]{2})(\d{1,2}|AL)-26$/);
+    if (!m || !STATES[m[1]]) return null;
+    return { series: meta.series, type: "house", st: m[1], dist: m[2] === "AL" ? 0 : +m[2], special: false, pref: meta.pref, multi: true };
   }
 
   // One key per race, used to pick a single series when Kalshi lists several for the same race.
@@ -71,7 +82,7 @@
     return !SIDE_BET.test(title || "") && !FOREIGN.test(title || "");
   }
 
-  const Core = { STATES, classify, seriesKey, is2026, slimMarket, slimEvent, untrackedRace };
+  const Core = { STATES, classify, eventMeta, seriesKey, is2026, slimMarket, slimEvent, untrackedRace };
   if (typeof module === "object" && module.exports) module.exports = Core;
   else root.Core = Core;
 })(typeof window !== "undefined" ? window : globalThis);

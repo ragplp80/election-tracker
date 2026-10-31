@@ -55,9 +55,19 @@ test("person markets are recognized as backups that party markets outrank", () =
 });
 
 test("coverage check flags race-like series we don't recognize, not side bets", () => {
-  assert.ok(Core.untrackedRace("KXHOUSERACE", "House Race Winner?"), "a generic race series gets flagged");
+  assert.ok(Core.untrackedRace("KXSENATERACE", "Senate Race Winner?"), "an unknown race series gets flagged");
+  assert.equal(Core.untrackedRace("KXHOUSERACE", "House Race Winner?"), false, "now recognized");
   for (const [t, ti] of [["SENATETX", "Texas Senate race"], ["KXSENATEILD", "ILD"], ["SENATEPARTYTN", "Tennessee Senate race"],
     ["KXSENATENYD", "Democratic nominee for New York Senate"], ["HOUSEMOV", "House margin of victory"], ["KXJAPANHOUSE", "Japan House of Representatives"],
     ["KXGOVSENSPLIT", "Senate-Governor split results"], ["KXMISENATE", "Michigan Senate winner? (Person)"]])
     assert.equal(Core.untrackedRace(t, ti), false, t);
+});
+
+test("a multi-district series is read district by district", () => {
+  const meta = { series: "KXHOUSERACE", ...Core.classify("KXHOUSERACE") };
+  assert.deepEqual(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-NC03-26" }), { series: "KXHOUSERACE", type: "house", st: "NC", dist: 3, special: false, pref: 1.5, multi: true });
+  assert.equal(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-AKAL-26" }).dist, 0);
+  assert.equal(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-XX03-26" }), null, "unknown state");
+  assert.ok(Core.is2026(meta, { event_ticker: "KXHOUSERACE-NC03-26" }));
+  assert.equal(Core.seriesKey(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-PA07-26" })), Core.seriesKey(Core.classify("HOUSEPA7")), "same race as the dedicated series");
 });

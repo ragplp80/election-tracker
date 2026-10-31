@@ -347,3 +347,16 @@ test("a page left open for hours refills its recent history on Refresh", async (
   assert.match(cell(), /^(D|R) \+|^0$/);
   noErrors(pg);
 });
+
+test("districts from the multi-district series show on the board (NC-3)", async (t) => {
+  const board = defaultBoard();
+  board.events.KXHOUSERACE = [twoParty("KXHOUSERACE-NC03-26", "Democrat X", "Greg Murphy", 0.2)];
+  for (const snapshot of ["ok", "fail"]) {
+    const pg = page(t, { board, snapshot });
+    await loaded(pg);
+    const row = pg.row("KXHOUSERACE-NC03-26");
+    assert.ok(row, `NC-3 row (${snapshot === "ok" ? "server snapshot" : "page fallback"})`);
+    assert.match(row.textContent, /NC-3/);
+    assert.match(row.textContent, /80% Greg Murphy/);
+  }
+});

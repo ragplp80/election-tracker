@@ -123,15 +123,38 @@ test("catalog: person markets fill in only when a race has no party market", asy
   board.events.KXGOVCA = [{ event_ticker: "KXGOVCA-26", markets: [require("./helpers.js").market("KXGOVCA-26-XB", "Xavier Becerra", 0.55), require("./helpers.js").market("KXGOVCA-26-KP", "Katie Porter", 0.45)] }];
   board.events.KXMISENATE = [{ event_ticker: "KXMISENATE-26", markets: [require("./helpers.js").market("KXMISENATE-26-MMCM", "Mallory McMorrow", 0.5)] }];
   board.events.SENATEMI = [twoParty("SENATEMI-26", "Abdul El-Sayed", "Mike Rogers", 0.7)];
-  board.events.KXHOUSERACE = [{ event_ticker: "KXHOUSERACE-26", markets: [] }];
-  board.titles = { KXHOUSERACE: "House Race Winner?" };
+  board.events.KXSENATERACE = [{ event_ticker: "KXSENATERACE-26", markets: [] }];
+  board.titles = { KXSENATERACE: "Senate Race Winner?" };
   const restore = useFakeKalshi(board, []);
   try {
     const cat = await lib.buildCatalog();
     const series = cat.races.map((r) => r.meta.series);
     assert.ok(series.includes("KXGOVCA"), "no party market for California governor: person market used");
     assert.ok(series.includes("SENATEMI") && !series.includes("KXMISENATE"), "party market wins in Michigan");
-    assert.ok(cat.coverage.untracked.some(([t]) => t === "KXHOUSERACE"), "unrecognized race series reported");
+    assert.ok(cat.coverage.untracked.some(([t]) => t === "KXSENATERACE"), "unrecognized race series reported");
     assert.ok(cat.coverage.senate >= 5 && cat.coverage.house >= 3);
+  } finally { restore(); }
+});
+
+test("multi-district series: each district becomes a race; a dedicated series still wins", async () => {
+  const { twoParty } = require("./helpers.js");
+  const board = defaultBoard();
+  board.events.KXHOUSERACE = [twoParty("KXHOUSERACE-NC03-26", "Democrat X", "Greg Murphy", 0.2), twoParty("KXHOUSERACE-KS03-26", "Sharice Davids", "Republican Y", 0.7),
+    twoParty("KXHOUSERACE-PA07-26", "Bob Brooks", "Ryan Mackenzie", 0.5)];
+  const log = [];
+  const restore = useFakeKalshi(board, log);
+  try {
+    const cat = await lib.buildCatalog();
+    const nc = cat.races.find((r) => r.meta.st === "NC" && r.meta.dist === 3);
+    assert.ok(nc && nc.meta.series === "KXHOUSERACE" && nc.events.length === 1 && nc.events[0].event_ticker === "KXHOUSERACE-NC03-26");
+    assert.ok(cat.races.find((r) => r.meta.st === "KS" && r.meta.dist === 3));
+    assert.equal(cat.races.find((r) => r.meta.st === "PA" && r.meta.dist === 7).meta.series, "HOUSEPA7", "dedicated PA-7 series wins");
+    // Fallback sweep reads the series once and gives each district only its own event
+    board.noBatch = true; log.length = 0;
+    const fresh = await lib.refreshPrices(cat);
+    assert.equal(fresh.mode, "sweep");
+    assert.equal(log.filter((l) => l.includes("series_ticker=KXHOUSERACE")).length, 1, "read once");
+    const nc2 = fresh.races.find((r) => r.meta.st === "NC" && r.meta.dist === 3);
+    assert.deepEqual(nc2.events.map((e) => e.event_ticker), ["KXHOUSERACE-NC03-26"]);
   } finally { restore(); }
 });

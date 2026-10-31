@@ -62,16 +62,22 @@ async function buildCatalog() {
   const critical = failed.filter((t) => { const c = Core.classify(t); return c && c.type !== "house"; });
   if (critical.length || failed.length > cands.length * 0.03)
     throw new Error(`catalog incomplete: ${failed.length} lookups failed (${failed.slice(0, 8).join(", ")})`);
-  const best = new Map();
+  // A multi-district series becomes one entry per district
+  const entries = [];
   for (const c of checked) {
     if (!c || c.error || !c.events.length) continue;
+    if (c.type !== "houseMulti") { entries.push(c); continue; }
+    for (const ev of c.events) { const m = Core.eventMeta(c, ev); if (m) entries.push({ ...m, events: [ev] }); }
+  }
+  const best = new Map();
+  for (const c of entries) {
     const key = Core.seriesKey(c), prev = best.get(key);
     if (!prev || (c.pref || 0) > (prev.pref || 0)) best.set(key, c);
   }
   let seats = null;
   const races = [];
   for (const c of best.values()) {
-    const meta = { series: c.series, type: c.type, st: c.st, dist: c.dist, special: c.special };
+    const meta = { series: c.series, type: c.type, st: c.st, dist: c.dist, special: c.special, ...(c.multi ? { multi: true } : {}) };
     if (c.type === "seats") { seats = Core.slimEvent(c.events[0]); continue; }
     races.push({ meta, events: c.events.map(Core.slimEvent) });
   }
@@ -98,10 +104,17 @@ async function refreshPrices(cat) {
   if (!errs && fresh.size >= tickers.length * 0.9) {
     return { mode: "batch", races: cat.races.map((r) => ({ meta: r.meta, events: r.events.map(swap) })), seats: cat.seats && swap(cat.seats) };
   }
-  // Fallback: one call per race
+  // Fallback: one call per series (a multi-district series is read once and split by event)
+  const bySeries = new Map();
+  const read = (series) => {
+    if (!bySeries.has(series)) bySeries.set(series, kget(`/events?series_ticker=${series}&status=open&with_nested_markets=true`));
+    return bySeries.get(series);
+  };
   const swept = await pool(cat.races, 8, async (r) => {
-    const e = await kget(`/events?series_ticker=${r.meta.series}&status=open&with_nested_markets=true`);
-    return { meta: r.meta, events: (e.events || []).filter((ev) => Core.is2026(r.meta, ev)).map(Core.slimEvent) };
+    const e = await read(r.meta.series);
+    const mine = new Set(r.events.map((ev) => ev.event_ticker));
+    const evs = (e.events || []).filter((ev) => Core.is2026(r.meta, ev) && (!r.meta.multi || mine.has(ev.event_ticker)));
+    return { meta: r.meta, events: evs.map(Core.slimEvent) };
   });
   let seats = cat.seats;
   try {

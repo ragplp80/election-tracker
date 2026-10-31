@@ -386,7 +386,7 @@ footer a{color:var(--muted)}
 <script>
 "use strict";
 // ---------- Reference data ----------
-const {STATES,classify,is2026,seriesKey}=Core;
+const {STATES,classify,is2026,seriesKey,eventMeta}=Core;
 // 2024 presidential margin by state, Trump minus Harris, percentage points (rounded).
 const TRUMP24={AL:30.5,AK:13.1,AZ:5.5,AR:30.6,CA:-20.1,CO:-11.0,CT:-14.5,DE:-14.7,FL:13.1,GA:2.2,HI:-23.1,ID:36.5,IL:-10.9,IN:19.0,IA:13.2,KS:16.1,KY:30.5,LA:22.0,ME:-6.9,MD:-28.5,MA:-25.2,MI:1.4,MN:-4.2,MS:22.9,MO:18.4,MT:19.9,NE:20.4,NV:3.1,NH:-2.8,NJ:-5.9,NM:-6.0,NY:-12.6,NC:3.2,ND:36.5,OH:11.2,OK:34.3,OR:-14.3,PA:1.7,RI:-13.8,SC:17.8,SD:29.2,TN:29.7,TX:13.7,UT:21.6,VT:-32.3,VA:-5.8,WA:-18.2,WV:41.9,WI:0.9,WY:45.8};
 // When most of each state's polls close, Eastern time on election night (hours after midnight; 24+ = next day).
@@ -1089,7 +1089,7 @@ let lastMode="";
 async function fullSweep(prog){
   const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true&status=open`);return{meta,events:j.events||[]}},prog);
   const out=[];let errs=0;
-  for(const x of res){if(!x||x.error){errs++;continue}for(const ev of x.events)out.push({meta:x.meta,ev})}
+  for(const x of res){if(!x||x.error){errs++;continue}for(const ev of x.events){const meta=eventMeta(x.meta,ev);if(meta)out.push({meta,ev})}}
   return{out,errs};
 }
 // One call for everything: the server keeps a shared copy, refreshed about every 15 seconds.
