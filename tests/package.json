@@ -1,0 +1,11 @@
+{
+  "name": "live-odds-tracker-tests",
+  "private": true,
+  "description": "Tests for the Live Odds Tracker page and server functions, run against a fake Kalshi.",
+  "scripts": {
+    "test": "node --test --test-concurrency=1"
+  },
+  "devDependencies": {
+    "jsdom": "24.1.0"
+  }
+}

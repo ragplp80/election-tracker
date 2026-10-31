@@ -300,10 +300,11 @@ footer a{color:var(--muted)}
   <div>Odds update about every 15 seconds.</div>
 </footer>
 
+<script src="core.js"></script>
 <script>
 "use strict";
 // ---------- Reference data ----------
-const STATES={AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming"};
+const {STATES,classify,is2026,seriesKey}=Core;
 // 2024 presidential margin by state, Trump minus Harris, percentage points (rounded).
 const TRUMP24={AL:30.5,AK:13.1,AZ:5.5,AR:30.6,CA:-20.1,CO:-11.0,CT:-14.5,DE:-14.7,FL:13.1,GA:2.2,HI:-23.1,ID:36.5,IL:-10.9,IN:19.0,IA:13.2,KS:16.1,KY:30.5,LA:22.0,ME:-6.9,MD:-28.5,MA:-25.2,MI:1.4,MN:-4.2,MS:22.9,MO:18.4,MT:19.9,NE:20.4,NV:3.1,NH:-2.8,NJ:-5.9,NM:-6.0,NY:-12.6,NC:3.2,ND:36.5,OH:11.2,OK:34.3,OR:-14.3,PA:1.7,RI:-13.8,SC:17.8,SD:29.2,TN:29.7,TX:13.7,UT:21.6,VT:-32.3,VA:-5.8,WA:-18.2,WV:41.9,WI:0.9,WY:45.8};
 // When most of each state's polls close, Eastern time on election night (hours after midnight; 24+ = next day).
@@ -351,31 +352,17 @@ async function pool(items,n,fn,onProgress){
 
 // ---------- Discovering the races ----------
 // Kalshi series naming (from the connection test): SENATETX, GOVPARTYAZ, HOUSEPA7, CONTROLS/CONTROLH.
-function classify(t){
-  let m;
-  if(t==="CONTROLS")return{type:"ctlS"};
-  if(t==="CONTROLH")return{type:"ctlH"};
-  if((m=t.match(/^SENATE([A-Z]{2})(S?)$/))&&STATES[m[1]])return{type:"senate",st:m[1],special:!!m[2],pref:2};
-  if((m=t.match(/^KXSENATE([A-Z]{2})$/))&&STATES[m[1]])return{type:"senate",st:m[1],special:false,pref:1};
-  if((m=t.match(/^GOVPARTY-?([A-Z]{2})$/))&&STATES[m[1]])return{type:"gov",st:m[1],pref:2};
-  if((m=t.match(/^KXGOVPARTY([A-Z]{2})$/))&&STATES[m[1]])return{type:"gov",st:m[1],pref:1};
-  if((m=t.match(/^HOUSE([A-Z]{2})(\d{1,2})(S?)$/))&&STATES[m[1]])return{type:"house",st:m[1],dist:+m[2],special:!!m[3],pref:2};
-  if((m=t.match(/^HOUSE([A-Z]{2})AL$/))&&STATES[m[1]])return{type:"house",st:m[1],dist:0,pref:2};
-  if((m=t.match(/^HOUSEPARTY-([A-Z]{2})(\d{1,2})$/))&&STATES[m[1]])return{type:"house",st:m[1],dist:+m[2],pref:2};
-  if((m=t.match(/^KXHOUSE([A-Z]{2})(\d{1,2})$/))&&STATES[m[1]])return{type:"house",st:m[1],dist:+m[2],pref:1};
-  return null;
-}
 async function discover(onProgress){
   const cached=store.get("et.series",null);
   if(cached&&Date.now()-cached.at<6*3600e3&&cached.list.length)return cached.list;
   const j=await kget("/series?category=Elections");
-  const cands=(j.series||[]).map(s=>({series:s.ticker,...classify(s.ticker)})).filter(s=>s.type);
+  const cands=(j.series||[]).map(s=>({series:s.ticker,...classify(s.ticker)})).filter(s=>s.type&&s.type!=="seats");
   // Keep only series that have an open event. Prefer the party-style series when a race has two.
   const checked=await pool(cands,4,async c=>{const e=await kget(`/events?series_ticker=${c.series}&status=open`);return{...c,open:(e.events||[]).length}},onProgress);
   const best=new Map();
   for(const c of checked){
     if(!c||c.error||!c.open)continue;
-    const key=c.type.startsWith("ctl")?c.type:`${c.type}-${c.st}-${c.dist??""}-${c.special?"s":""}`;
+    const key=seriesKey(c);
     const prev=best.get(key);
     if(!prev||c.pref>prev.pref)best.set(key,c);
   }
@@ -407,9 +394,6 @@ function dProbOf(outs,key){
   if(pd!=null)return pd; if(pr!=null)return 1-pr;
   return null;
 }
-// Only this year's races: Kalshi names 2026 state races like SENATETX-26 and control markets like CONTROLS-2026.
-// Off-year races (e.g. Kentucky governor, 2027) are listed too, so they are filtered out here.
-const is2026=(meta,ev)=>meta.type.startsWith("ctl")?/-2026\b/.test(ev.event_ticker):/-26(\b|[A-Z])/.test(ev.event_ticker);
 function buildRace(meta,ev){
   if(!is2026(meta,ev))return null;
   const outs=(ev.markets||[]).filter(m=>m.status!=="finalized").map(m=>({
@@ -787,7 +771,8 @@ function render(){
 }
 function renderStatus(){
   const t=lastOk?lastOk.toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"}):"–";
-  let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s${lastMode==="fast"?", fast":""})</span>`:""}`;
+  if(savedFrom&&!lastOk){$("updated").innerHTML=`Showing saved odds from <b>${new Date(savedFrom).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b> · updating…`;return}
+  let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s${lastMode==="fast"||lastMode==="snapshot"?", fast":""})</span>`:""}`;
   if(bf.running)s+=` · filling in trends <span class="num">${bf.done}/${bf.total}</span>`;
   if(errCount)s+=` · <span class="err">${errCount} race${errCount>1?"s":""} didn't load</span>`;
   if(ui.auto&&nextAt)s+=` · next in <b class="num" id="cd">${Math.max(0,Math.round((nextAt-Date.now())/1000))}s</b>`;
@@ -837,17 +822,49 @@ async function batchSweep(prog){
   const out=[];for(const [et,markets] of byEvent){const meta=eventMeta.get(et);if(meta)out.push({meta,ev:{event_ticker:et,markets}})}
   return{out,errs:0};
 }
+// One call for everything: the server keeps a shared copy, refreshed about every 15 seconds.
+// If it fails, the page falls back to asking for each race itself (the code above).
+let snapFailedAt=0,savedFrom=null;
+async function snapshotSweep(){
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),30000);
+  try{
+    const r=await fetch("/api/snapshot",{signal:ctl.signal,headers:{accept:"application/json"}});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const j=await r.json();
+    if(!Array.isArray(j.races)||!j.races.length)throw new Error("empty snapshot");
+    return{out:j.races,errs:0,seats:j.seats,at:j.at};
+  }finally{clearTimeout(t)}
+}
+// Save the latest odds on this device so the next visit can show them instantly.
+function saveSnapshot(out,seats){
+  try{localStorage.setItem("et.snap",JSON.stringify({at:Date.now(),out:out.map(x=>({meta:x.meta,ev:Core.slimEvent(x.ev)})),seats:seats?Core.slimEvent(seats):null}))}catch(e){}
+}
+function paintSaved(){
+  const snap=store.get("et.snap",null);
+  if(!snap||!Array.isArray(snap.out)||Date.now()-snap.at>72*3600e3)return false;
+  for(const {meta,ev} of snap.out){const r=buildRace(meta,ev);if(r)races.set(r.id,r)}
+  if(snap.seats)houseSeats=parseSeatMarket({events:[snap.seats]});
+  if(!races.size)return false;
+  savedFrom=snap.at;
+  for(const r of races.values())metrics(r);
+  render();renderStatus();
+  return true;
+}
 async function refresh(){
   if(busy)return;busy=true;$("refresh").disabled=true;$("refresh").textContent="Updating…";
   const prog=(d,n)=>{$("prog").style.width=(d/n*100)+"%"};
   const t0=performance.now();
   try{
-    if(!series.length){
+    let result=null;
+    if(Date.now()-snapFailedAt>5*60e3){
+      try{result=await snapshotSweep();lastMode="snapshot";if(result.seats)houseSeats=parseSeatMarket({events:[result.seats]})}
+      catch(e){snapFailedAt=Date.now();result=null}
+    }
+    if(!result&&!series.length){
       $("loading")&&($("loading").textContent="Loading every Senate, governor and House race…");
       series=await discover(prog);
     }
-    let result=null;
-    if(batchOK&&marketTickers.length&&refreshN%10!==0){
+    if(!result&&batchOK&&marketTickers.length&&refreshN%10!==0){
       result=await batchSweep(prog);
       if(!result){batchOK=false;store.set("et.batchOK",false)}
       else lastMode="fast";
@@ -855,7 +872,7 @@ async function refresh(){
     if(!result){result=await fullSweep(prog);lastMode="full";
       if(!store.get("et.batchOK",true)&&refreshN%10===0){batchOK=true;store.set("et.batchOK",true)} }  // give batching another chance now and then
     refreshN++;
-    try{houseSeats=parseSeatMarket(await kget("/events?series_ticker=KXDHOUSESEATS&with_nested_markets=true&status=open"))}catch(e){}
+    if(lastMode!=="snapshot"){try{houseSeats=parseSeatMarket(await kget("/events?series_ticker=KXDHOUSESEATS&with_nested_markets=true&status=open"))}catch(e){}}
     // Remember the previous refresh for "Last" moves and lead flips
     for(const r of races.values()){prevSnap.set(r.id,val(r));prevSnap.set(r.id+":leader",r.leader.party+r.leader.name)}
     errCount=result.errs;const now=Date.now();
@@ -867,7 +884,8 @@ async function refresh(){
     // Drop history older than 12 hours
     for(const k in history){history[k]=compactHistory(history[k],now);if(!history[k].length)delete history[k]}
     store.set("et.history",history);
-    lastOk=new Date();lastSecs=((performance.now()-t0)/1000).toFixed(1);
+    lastOk=new Date();lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
+    saveSnapshot(result.out,lastMode==="snapshot"?result.seats:null);
     store.set("et.lastSeen",now);
     if(!goingIn||goingIn.date!==etDate())captureBaseline(false);
     for(const r of races.values())metrics(r);
@@ -1132,6 +1150,7 @@ $("typeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.type=v;setP
 setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);
 $("auto").setAttribute("aria-pressed",ui.auto);$("compet").setAttribute("aria-pressed",ui.compet);
 if(ui.auto)keepAwake(true);
+paintSaved();
 refresh();
 </script>
 </body>

@@ -1,0 +1,158 @@
+// The page itself, run in a headless browser against the fake Kalshi.
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { defaultBoard, twoParty, loadPage, waitFor, loaded } = require("./helpers.js");
+
+function page(t, opts) {
+  const pg = loadPage(opts);
+  t.after(() => pg.close());
+  return pg;
+}
+const noErrors = (pg) => assert.deepEqual(pg.errors, [], "no script errors");
+
+test("loads every race from one snapshot call", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  assert.equal(pg.log.filter((l) => l === "PAGE /api/snapshot").length, 1);
+  const pageCalls = pg.log.filter((l) => l.startsWith("PAGE /api/kalshi "));
+  assert.ok(pageCalls.every((l) => /candlesticks$/.test(l)), "the page only asks for trend history itself, never for races");
+  assert.match(pg.text("#updated"), /fast/);
+  assert.match(pg.text("#ctlS"), /67%/);
+  noErrors(pg);
+});
+
+test("shows one row per race, 2026 only", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  const ids = pg.rows().map((r) => r.dataset.id);
+  assert.equal(ids.filter((id) => id.startsWith("SENATEAK") || id.startsWith("KXSENATEAK")).length, 1, "Alaska appears once");
+  assert.ok(ids.includes("SENATEAK-26"), "busy Alaska market wins over the thin one");
+  assert.ok(!ids.some((id) => id.includes("KY")), "Kentucky 2027 hidden");
+  assert.ok(!ids.some((id) => id.includes("NYCCOUNCIL")));
+});
+
+test("reads party tags in every Kalshi style (NC-11 uses DEM/GOP)", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  const nc = pg.row("KXHOUSENC11-26");
+  assert.ok(nc.querySelector(".oddslab .d").textContent.includes("Jamie Ager"));
+  assert.ok(nc.querySelector(".oddslab .r2").textContent.includes("Jennifer Balkcom"));
+});
+
+test("three-way race: Nebraska shows the independent and flags an I pickup when he leads", async (t) => {
+  const board = defaultBoard();
+  const pg = page(t, { board });
+  await loaded(pg);
+  const ne = () => pg.row("SENATENE-26").textContent;
+  assert.match(ne(), /Pete Ricketts 7\d%/);
+  assert.match(ne(), /Dan Osborn/);
+  assert.doesNotMatch(ne(), /Cindy Burbank/, "the 0% Democrat isn't headlined");
+  // Osborn takes the lead
+  const m = board.events.SENATENE[0].markets;
+  Object.assign(m[0], { yes_bid_dollars: "0.3950", yes_ask_dollars: "0.4050", last_price_dollars: "0.4000" });
+  Object.assign(m[1], { yes_bid_dollars: "0.6050", yes_ask_dollars: "0.6150", last_price_dollars: "0.6100" });
+  pg.d.getElementById("refresh").click();
+  await waitFor(() => /I pickup/.test(ne()), { what: "I pickup" });
+});
+
+test("seat holders and pickups", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  assert.match(pg.row("SENATETX-26").textContent, /D pickup/, "Texas held by R, D favored");
+  assert.doesNotMatch(pg.row("SENATEGA-26").textContent, /pickup/, "Georgia held by D, D favored");
+  assert.match(pg.row("KXHOUSENC11-26").textContent, /New map/, "redrawn state has no holder");
+});
+
+test("balance of power: Senate adds to 100, House uses the seat market", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  const nums = [...pg.d.querySelectorAll("#balS .baltally b")].map((b) => parseInt(b.textContent));
+  assert.equal(nums.reduce((a, b) => a + b, 0), 100, "Senate seats add to 100");
+  const widths = [...pg.d.querySelectorAll("#balS .seatbar i")].reduce((a, i) => a + parseFloat(i.style.width), 0);
+  assert.equal(Math.round(widths), 100, "Senate bar fills exactly");
+  assert.match(pg.text("#balH"), /23\dDEM/);
+  assert.match(pg.text("#balH"), /218/);
+});
+
+test("toss-up chip opens the race chart", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  const chip = pg.d.querySelector('#balS [data-open="SENATEME-26"]');
+  assert.ok(chip, "Maine listed as a toss-up");
+  chip.click();
+  await waitFor(() => pg.d.getElementById("sheetTitle"), { what: "chart sheet" });
+  assert.equal(pg.text("#sheetTitle"), "Maine");
+  await waitFor(() => !/Loading/.test(pg.text("#chartbox")), { what: "chart loaded" });
+});
+
+test("falls back to per-race loading when the snapshot is down", async (t) => {
+  const pg = page(t, { snapshot: "fail" });
+  await loaded(pg);
+  assert.ok(pg.log.some((l) => l.startsWith("PAGE /api/kalshi /events")), "used the relay for races");
+  assert.ok(pg.row("SENATETX-26"));
+  assert.ok(!pg.rows().some((r) => r.dataset.id.includes("KY")), "still filters 2027");
+  assert.match(pg.text("#balH"), /DEM/, "House seat market still loads");
+  noErrors(pg);
+});
+
+test("shows saved odds instantly, then updates", async (t) => {
+  const first = loadPage();
+  await loaded(first);
+  const saved = JSON.parse(first.w.localStorage.getItem("et.snap"));
+  first.close();
+  assert.ok(saved && saved.out.length > 5, "odds were saved on the device");
+
+  const pg = page(t, { snapshot: "slow", storage: { "et.snap": saved } });
+  await waitFor(() => pg.rows().length > 0, { what: "saved rows" });
+  assert.match(pg.text("#updated"), /Showing saved odds/);
+  pg.release();
+  await waitFor(() => /Updated/.test(pg.text("#updated")), { what: "fresh odds" });
+  noErrors(pg);
+});
+
+test("What changed: lead flip and 90% crossing, nothing for flat races", async (t) => {
+  const board = defaultBoard();
+  const now = Math.floor(Date.now() / 1000), H = 3600;
+  // Maine flips 3 hours ago; Georgia passes 90% 8 hours ago; Texas is flat.
+  board.events.SENATEME = [twoParty("SENATEME-26", "Graham Platner", "Susan Collins", 0.56)];
+  board.events.SENATEGA = [twoParty("SENATEGA-26", "Jon Ossoff", "Mike Collins", 0.92)];
+  const paths = { SENATEME: (t) => (t > now - 3 * H ? 0.56 : 0.44), SENATEGA: (t) => (t > now - 8 * H ? 0.92 : 0.84), SENATETX: () => 0.68 };
+  board.candles = (tk, t) => {
+    const s = Object.keys(paths).find((k) => tk.startsWith(k + "-"));
+    if (!s) return null;
+    const v = paths[s](t);
+    return tk.endsWith("-D") ? v : 1 - v;
+  };
+  const pg = page(t, { board });
+  await loaded(pg);
+  await waitFor(() => /Maine Sen/.test(pg.text("#feedList")) && /Georgia Sen/.test(pg.text("#feedList")), { what: "feed entries", timeout: 12000 });
+  const feed = pg.text("#feedList");
+  assert.match(feed, /Maine Sen: lead flipped to Graham Platner/);
+  assert.match(feed, /Georgia Sen: Jon Ossoff passed 90%/);
+  assert.doesNotMatch(feed, /Texas Sen/);
+  assert.equal(pg.d.querySelectorAll("#feedList .fe").length, 2, "flip and its move are one line each");
+  noErrors(pg);
+});
+
+test("Move over: window choice drives the move column; since last look shows the time", async (t) => {
+  const pg = page(t, { storage: { "et.lastSeen": Date.now() - 5 * 3600e3 } });
+  await loaded(pg);
+  pg.d.querySelector('#winSeg [data-v="6h"]').click();
+  assert.equal(pg.text("#winHead"), "6h");
+  pg.d.querySelector('#winSeg [data-v="last"]').click();
+  assert.match(pg.text("#winHead"), /^Since \d/);
+  assert.match(pg.text("#nMoveLab"), /since/i);
+  noErrors(pg);
+});
+
+test("tapping a race opens its chart", async (t) => {
+  const board = defaultBoard();
+  board.candles = (tk) => (tk.endsWith("-D") ? 0.6 : 0.4);
+  const pg = page(t, { board });
+  await loaded(pg);
+  pg.row("SENATETX-26").click();
+  await waitFor(() => pg.d.querySelectorAll("#chartbox path").length === 2, { what: "chart lines" });
+  assert.equal(pg.text("#sheetTitle"), "Texas");
+  pg.d.getElementById("sheetClose").click();
+  assert.ok(!pg.d.getElementById("sheetBg"));
+});
