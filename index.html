@@ -92,7 +92,7 @@ h1 small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color
 .oddslab span{overflow:hidden;text-overflow:ellipsis}
 .oddslab .d{color:var(--dem)} .oddslab .r2{color:var(--rep)} .oddslab .x{color:var(--ind)}
 .c{text-align:right;font-size:13.5px;font-weight:600;white-space:nowrap}
-.up{color:var(--dem)} .down{color:var(--rep)} .flat{color:var(--faint)}
+.up{color:var(--dem)} .down{color:var(--rep)} .ind{color:var(--ind)} .flat{color:var(--faint)}
 .c.mute{color:var(--muted);font-weight:500}
 .spark svg{display:block;width:100%;height:26px}
 .flags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
@@ -292,7 +292,7 @@ footer a{color:var(--muted)}
 
 <footer>
   <div>"Move over" sets the window for the move column, the Movers sort and the big-move count. "Since last look" compares with the last time this device had the page open (more than 30 minutes ago). When the page hasn't been open long enough, it looks up the missing history. Big move = 5+ points in 15m or 1h, 8+ points over longer windows.</div>
-  <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability: <span class="up">blue</span> means toward the Democrat, <span class="down">red</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
+  <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability and labeled by who gained: <span class="up">D +2</span> means 2 points toward the Democrat, <span class="down">R +2</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
   <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that redrew or are fighting over their district lines for 2026.</div>
   <div>Balance of power: each Senate race is counted for its current favorite. Safe = favorite 90%+, likely 75–90%, lean 60–75%, toss-up under 60%. Seats not up this year: 34 Democratic (including King and Sanders, who caucus with Democrats) and 31 Republican. Democrats need 51 for control; Republicans need 50 because Vice President Vance breaks ties. The House has markets on only about 100 of 435 districts, so its seat count comes from the market on how many seats Democrats will win: the expected number, with the range covering the middle 80% of outcomes.</div>
   <div>What changed lists lead changes, races crossing 75% or 90%, and big moves, built from price history. Before election night a big move is 5+ points within 4 hours; on election night (from 5pm ET) it is 4+ points within 15 minutes. "New" marks anything since your last look. Older entries come from hourly prices, so their times are to the hour.</div>
@@ -323,7 +323,14 @@ const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v)
 const num=v=>{const n=parseFloat(v);return Number.isFinite(n)?n:null};
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmtPct=p=>p==null?"–":Math.round(p*100)+"%";
-const fmtPts=d=>{if(d==null)return'<span class="flat">–</span>';const v=d*100;if(Math.abs(v)<0.5)return'<span class="flat">0</span>';return`<span class="${v>0?"up":"down"}">${v>0?"+":"−"}${Math.abs(v).toFixed(Math.abs(v)<10?1:0)}</span>`};
+// Moves are labeled by who gained: "D +1.6" or "R +2.2" (or "I +3" toward an independent like Osborn).
+const fmtPts=(d,r)=>{
+  if(d==null)return'<span class="flat">–</span>';
+  const v=d*100;if(Math.abs(v)<0.5)return'<span class="flat">0</span>';
+  const toD=v>0,ind=toD&&r&&r.multi&&r.outs.find(o=>o.party!=="R")?.party==="I";
+  const who=toD?(ind?"I":"D"):"R",cls=toD?(ind?"ind":"up"):"down";
+  return`<span class="${cls}">${who} +${Math.abs(v).toFixed(Math.abs(v)<10?1:0)}</span>`;
+};
 const fmtVol=v=>v==null?"–":v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e3?Math.round(v/1e3)+"k":String(Math.round(v));
 const fmtMargin=m=>m==null?"–":(m>0?"R+":"D+")+Math.abs(m).toFixed(0);
 const fmtClock=h=>{if(h==null)return"–";let hh=Math.floor(h)%24;const mm=Math.round((h%1)*60);const ap=hh>=12?"pm":"am";hh=hh%12||12;return hh+(mm?":"+String(mm).padStart(2,"0"):"")+ap};
@@ -707,7 +714,7 @@ function renderControl(elId,title,r){
   el.innerHTML=`<h2>${title}</h2>
     <div class="ctlnums"><div class="big d num">${fmtPct(r.d)}<small>DEM</small></div><div class="big r num">${fmtPct(1-r.d)}<small>REP</small></div></div>
     <div class="splitbar"><i class="d" style="width:${r.d*100}%"></i><i class="r" style="width:${(1-r.d)*100}%"></i></div>
-    <div class="ctlfoot num"><span>${esc(winLabel(true))} ${fmtPts(r.dWin)} · Going in ${fmtPts(r.dIn)} · 24h ${fmtPts(r.d24h)}</span></div>
+    <div class="ctlfoot num"><span>${esc(winLabel(true))} ${fmtPts(r.dWin,r)} · Going in ${fmtPts(r.dIn,r)} · 24h ${fmtPts(r.d24h,r)}</span></div>
     <div class="spark">${spark(r.id,r.d>=0.5?"var(--dem)":"var(--rep)")}</div>`;
 }
 function render(){
@@ -756,14 +763,14 @@ function render(){
       <div class="race"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></div>
       <div class="heldcell">${heldBadge(r.held)}</div>
       <div class="odds">${oddsCell(r)}</div>
-      <div class="c num">${fmtPts(r.dLast)}</div>
-      <div class="c num">${fmtPts(r.dWin)}</div>
-      <div class="c num">${fmtPts(r.dIn)}</div>
-      <div class="c num">${fmtPts(r.d24h)}</div>
+      <div class="c num">${fmtPts(r.dLast,r)}</div>
+      <div class="c num">${fmtPts(r.dWin,r)}</div>
+      <div class="c num">${fmtPts(r.dIn,r)}</div>
+      <div class="c num">${fmtPts(r.d24h,r)}</div>
       <div class="c num mute">${fmtVol(r.vol24)}</div>
       <div class="c num mute">${fmtMargin(r.trump)}</div>
       <div class="c num mute">${fmtClock(r.polls)}</div>
-      <div class="mobilemoves num">${r.held&&r.held!=="new"?`<span>Held ${r.held}</span>`:""}<span>Last ${fmtPts(r.dLast)}</span><span>${esc(winLabel(true))} ${fmtPts(r.dWin)}</span><span>In ${fmtPts(r.dIn)}</span><span>Vol ${fmtVol(r.vol24)}</span>${r.trump!=null?`<span>Trump '24 ${fmtMargin(r.trump)}</span>`:""}</div>
+      <div class="mobilemoves num">${r.held&&r.held!=="new"?`<span>Held ${r.held}</span>`:""}<span>Last ${fmtPts(r.dLast,r)}</span><span>${esc(winLabel(true))} ${fmtPts(r.dWin,r)}</span><span>In ${fmtPts(r.dIn,r)}</span><span>Vol ${fmtVol(r.vol24)}</span>${r.trump!=null?`<span>Trump '24 ${fmtMargin(r.trump)}</span>`:""}</div>
       <div class="spark-flags" style="display:grid;gap:3px;min-width:0"><div class="flags">${r.flags.map(f=>`<span class="chip ${f.cls}">${f.t}</span>`).join("")}</div><div class="spark">${spark(r.id,color)}</div></div>
     </div>`}).join("");
   const head=$("table").querySelector(".row.head").outerHTML;

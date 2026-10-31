@@ -156,3 +156,20 @@ test("tapping a race opens its chart", async (t) => {
   pg.d.getElementById("sheetClose").click();
   assert.ok(!pg.d.getElementById("sheetBg"));
 });
+
+test("moves are labeled by who gained (D +, R +, I +), never a minus sign", async (t) => {
+  const { market } = require("./helpers.js");
+  const board = defaultBoard();
+  // 24 hours ago: Talarico 75% -> now 68% (R +7); Ossoff 70% -> 80% (D +10); Osborn 20% -> 29% (I +)
+  board.events.SENATETX = [{ event_ticker: "SENATETX-26", markets: [market("SENATETX-26-D", "James Talarico", 0.68, { prev: 0.75 }), market("SENATETX-26-R", "Ken Paxton", 0.32, { prev: 0.25 })] }];
+  board.events.SENATEGA = [{ event_ticker: "SENATEGA-26", markets: [market("SENATEGA-26-D", "Jon Ossoff", 0.8, { prev: 0.7 }), market("SENATEGA-26-R", "Mike Collins", 0.2, { prev: 0.3 })] }];
+  board.events.SENATENE = [{ event_ticker: "SENATENE-26", markets: [market("SENATENE-26-R", "Pete Ricketts", 0.72, { prev: 0.8 }), market("SENATENE-26-I", "Dan Osborn", 0.29, { prev: 0.2 }), market("SENATENE-26-D", "Cindy Burbank", 0.003)] }];
+  const pg = page(t, { board, storage: { "et.ui": { sort: "key", type: "all", compet: false, auto: false, win: "24h" } } });
+  await loaded(pg);
+  const moveCell = (id) => pg.row(id).querySelectorAll(".c")[1].textContent.trim();
+  assert.equal(moveCell("SENATETX-26"), "R +7.0");
+  assert.equal(moveCell("SENATEGA-26"), "D +10");
+  assert.match(moveCell("SENATENE-26"), /^I \+/);
+  assert.doesNotMatch(pg.d.getElementById("table").textContent, /−\d/, "no minus signs in moves");
+  noErrors(pg);
+});
