@@ -293,14 +293,15 @@ footer a{color:var(--muted)}
 <footer>
   <div>"Move over" sets the window for the move column, the Movers sort and the big-move count. "Since last look" compares with the last time this device had the page open (more than 30 minutes ago). When the page hasn't been open long enough, it looks up the missing history. Big move = 5+ points in 15m or 1h, 8+ points over longer windows.</div>
   <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability and labeled by who gained: <span class="up">D +2</span> means 2 points toward the Democrat, <span class="down">R +2</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
-  <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that redrew or are fighting over their district lines for 2026.</div>
+  <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that use new district lines in 2026: Texas, California, North Carolina, Ohio, Utah, Florida, Tennessee, Louisiana and Alabama.</div>
   <div>Balance of power: each Senate race is counted for its current favorite. Safe = favorite 90%+, likely 75–90%, lean 60–75%, toss-up under 60%. Seats not up this year: 34 Democratic (including King and Sanders, who caucus with Democrats) and 31 Republican. Democrats need 51 for control; Republicans need 50 because Vice President Vance breaks ties. The House has markets on only about 100 of 435 districts, so its seat count comes from the market on how many seats Democrats will win: the expected number, with the range covering the middle 80% of outcomes.</div>
   <div>What changed lists lead changes, races crossing 75% or 90%, and big moves, built from price history. Before election night a big move is 5+ points within 4 hours; on election night (from 5pm ET) it is 4+ points within 15 minutes. "New" marks anything since your last look. Older entries come from hourly prices, so their times are to the hour.</div>
-  <div>Trump '24 is the 2024 presidential margin in the state (R+ or D+, rounded). Left off for House races because several states redrew districts for 2026. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
+  <div>Trump '24 is the 2024 presidential margin (R+ or D+, rounded): statewide for Senate and governor, by district for the House. Districts in redrawn states use the new lines where recalculated results exist (Utah, Florida, TX-28) and are blank otherwise. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
   <div>Odds update about every 15 seconds.</div>
 </footer>
 
 <script src="core.js"></script>
+<script src="house2024.js"></script>
 <script>
 "use strict";
 // ---------- Reference data ----------
@@ -312,9 +313,8 @@ const POLLS={IN:18,KY:18,GA:19,SC:19,VA:19,VT:19,FL:19,NC:19.5,OH:19.5,WV:19.5,A
 // Party holding each seat going into the 2026 election.
 const HELD_SEN={AL:"R",AK:"R",AR:"R",CO:"D",DE:"D",FL:"R",GA:"D",ID:"R",IL:"D",IA:"R",KS:"R",KY:"R",LA:"R",ME:"R",MA:"D",MI:"D",MN:"D",MS:"R",MT:"R",NE:"R",NH:"D",NJ:"D",NM:"D",NC:"R",OH:"R",OK:"R",OR:"D",RI:"D",SC:"R",SD:"R",TN:"R",TX:"R",VA:"D",WV:"R",WY:"R"};
 const HELD_GOV={AL:"R",AK:"R",AZ:"D",AR:"R",CA:"D",CO:"D",CT:"D",FL:"R",GA:"R",HI:"D",ID:"R",IL:"D",IA:"R",KS:"D",ME:"D",MD:"D",MA:"D",MI:"D",MN:"D",NE:"R",NV:"R",NH:"R",NM:"D",NY:"D",OH:"R",OK:"R",OR:"D",PA:"D",RI:"D",SC:"R",SD:"R",TN:"R",TX:"R",VT:"R",WI:"D",WY:"R"};
-// House seats in states whose lines did not change for 2026 (party at the start of the 119th Congress or after a special).
-const HELD_HOUSE={"AK-0":"R","AZ-1":"R","AZ-2":"R","AZ-6":"R","AZ-7":"D","CO-3":"R","CO-8":"R","CT-5":"D","IA-1":"R","IA-2":"R","IA-3":"R","IL-17":"D","IN-1":"D","IN-7":"D","ME-2":"D","MI-3":"D","MI-4":"R","MI-7":"R","MI-8":"D","MI-10":"R","MN-2":"D","MT-1":"R","NE-2":"R","NH-1":"D","NH-2":"D","NJ-5":"D","NJ-7":"R","NJ-9":"D","NM-2":"D","NV-1":"D","NV-3":"D","NV-4":"D","NY-1":"R","NY-3":"D","NY-4":"D","NY-17":"R","NY-18":"D","NY-19":"D","NY-21":"R","NY-22":"D","OR-5":"D","PA-1":"R","PA-7":"R","PA-8":"R","PA-10":"R","PA-17":"D","WA-3":"D","WA-8":"D","WI-1":"R","WI-3":"R"};
-const REDRAWN=new Set(["CA","TX","NC","MO","OH","UT","VA","FL"]);
+// House: 2024 presidential margins and 2024 winners by district, and which states redrew (house2024.js).
+const REDRAWN=new Set(HOUSE2024.redrawn);
 const ELECTION_DAY="2026-11-03";
 
 // ---------- Small helpers ----------
@@ -430,9 +430,9 @@ function buildRace(meta,ev){
   return{id:ev.event_ticker,type:meta.type,st,dist:meta.dist,label,sub,outs,multi,
     key:meta.type==="senate"?`senate-${st}`:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,series:meta.series,
     leader:outs[0],d,d24,vol24:outs.reduce((s,o)=>s+o.vol24,0),
-    trump:(meta.type==="senate"||meta.type==="gov")?TRUMP24[st]??null:null,
+    trump:(meta.type==="senate"||meta.type==="gov")?TRUMP24[st]??null:meta.type==="house"?HOUSE2024.pres[st+"-"+(meta.dist||0)]??null:null,
     polls:POLLS[st]??null,
-    held:meta.type==="senate"?HELD_SEN[st]??null:meta.type==="gov"?HELD_GOV[st]??null:meta.type==="house"?(REDRAWN.has(st)?"new":HELD_HOUSE[st+"-"+(meta.dist||0)]??null):null};
+    held:meta.type==="senate"?HELD_SEN[st]??null:meta.type==="gov"?HELD_GOV[st]??null:meta.type==="house"?(REDRAWN.has(st)?"new":HOUSE2024.won[st+"-"+(meta.dist||0)]??null):null};
 }
 
 // ---------- State ----------

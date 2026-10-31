@@ -121,8 +121,8 @@ function loadPage(opts = {}) {
   const snapshotHandler = require(path.join(ROOT, "api/snapshot.js"));
   const errors = [];
   let html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-  const core = fs.readFileSync(path.join(ROOT, "core.js"), "utf8");
-  html = html.replace('<script src="core.js"></script>', `<script>${core}</script>`);
+  // Inline the page's own script files (core.js, house2024.js, ...)
+  html = html.replace(/<script src="([\w.-]+\.js)"><\/script>/g, (_, f) => `<script>${fs.readFileSync(path.join(ROOT, f), "utf8")}</script>`);
 
   const restore = useFakeKalshi(board, log);
   let releaseSnapshot = null;

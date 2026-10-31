@@ -215,3 +215,23 @@ test("move column fills in for quiet and thin races after history loads", async 
   assert.equal(moveCell("HOUSEPA7-26"), "D +5.0", "6h move uses the price before the last trade");
   noErrors(pg);
 });
+
+test("House rows show their district's 2024 result and holder; Missouri and Virginia use old maps", async (t) => {
+  const board = defaultBoard();
+  board.events.HOUSEVA2 = [twoParty("HOUSEVA2-26", "Missy Cotter Smasal", "Jen Kiggans", 0.55)];
+  board.events.HOUSEFL13 = [twoParty("HOUSEFL13-26", "D", "Anna Paulina Luna", 0.2)];
+  board.events.KXHOUSEMO5 = [twoParty("KXHOUSEMO5-26", "Emanuel Cleaver", "R", 0.9)];
+  const pg = page(t, { board });
+  await loaded(pg);
+  const cells = (id) => [...pg.row(id).querySelectorAll(".c")].map((c) => c.textContent.trim());
+  assert.equal(cells("HOUSEPA7-26")[5], "R+3", "PA-7 Trump '24 by district, not statewide");
+  assert.equal(pg.row("HOUSEPA7-26").querySelector(".held").textContent, "R");
+  assert.equal(pg.row("HOUSEVA2-26").querySelector(".held").textContent, "R", "Virginia keeps its old map, so the holder is known");
+  assert.match(pg.row("HOUSEVA2-26").textContent, /D pickup/);
+  assert.equal(pg.row("KXHOUSEMO5-26").querySelector(".held").textContent, "D", "Missouri keeps its old map");
+  assert.equal(cells("KXHOUSEMO5-26")[5], "D+23");
+  assert.match(pg.row("HOUSEFL13-26").textContent, /New map/, "Florida redrew");
+  assert.equal(cells("HOUSEFL13-26")[5], "R+13", "Florida uses the recalculated new-line result");
+  assert.equal(cells("KXHOUSENC11-26")[5], "–", "no recalculated result for North Carolina yet");
+  noErrors(pg);
+});
