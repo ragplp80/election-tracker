@@ -116,3 +116,22 @@ test("catalog: never publishes a list missing a Senate race", async () => {
   const restore = useFakeKalshi(board, []);
   try { await assert.rejects(lib.buildCatalog(), /incomplete.*SENATETX/); } finally { restore(); }
 });
+
+test("catalog: person markets fill in only when a race has no party market", async () => {
+  const { twoParty } = require("./helpers.js");
+  const board = defaultBoard();
+  board.events.KXGOVCA = [{ event_ticker: "KXGOVCA-26", markets: [require("./helpers.js").market("KXGOVCA-26-XB", "Xavier Becerra", 0.55), require("./helpers.js").market("KXGOVCA-26-KP", "Katie Porter", 0.45)] }];
+  board.events.KXMISENATE = [{ event_ticker: "KXMISENATE-26", markets: [require("./helpers.js").market("KXMISENATE-26-MMCM", "Mallory McMorrow", 0.5)] }];
+  board.events.SENATEMI = [twoParty("SENATEMI-26", "Abdul El-Sayed", "Mike Rogers", 0.7)];
+  board.events.KXHOUSERACE = [{ event_ticker: "KXHOUSERACE-26", markets: [] }];
+  board.titles = { KXHOUSERACE: "House Race Winner?" };
+  const restore = useFakeKalshi(board, []);
+  try {
+    const cat = await lib.buildCatalog();
+    const series = cat.races.map((r) => r.meta.series);
+    assert.ok(series.includes("KXGOVCA"), "no party market for California governor: person market used");
+    assert.ok(series.includes("SENATEMI") && !series.includes("KXMISENATE"), "party market wins in Michigan");
+    assert.ok(cat.coverage.untracked.some(([t]) => t === "KXHOUSERACE"), "unrecognized race series reported");
+    assert.ok(cat.coverage.senate >= 5 && cat.coverage.house >= 3);
+  } finally { restore(); }
+});

@@ -66,7 +66,7 @@ function fakeKalshi(board, log = []) {
     const json = (body, status = 200) => ({ ok: status < 400, status, headers: { get: () => null }, json: async () => JSON.parse(JSON.stringify(body)), text: async () => JSON.stringify(body) });
     if (board.fail && board.fail(p, u)) return json({ error: "nope" }, board.failStatus || 500);
     if (p === "/exchange/status") return json({ exchange_active: true });
-    if (p === "/series") return json({ series: Object.keys(board.events).map((t) => ({ ticker: t, title: t })) });
+    if (p === "/series") return json({ series: Object.keys(board.events).map((t) => ({ ticker: t, title: (board.titles && board.titles[t]) || t })) });
     if (p === "/events") {
       const evs = board.events[u.searchParams.get("series_ticker")] || [];
       const nested = u.searchParams.get("with_nested_markets") === "true";

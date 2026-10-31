@@ -23,7 +23,7 @@ module.exports = async (req, res) => {
     const fresh = await refreshPrices(cat);
     const races = fresh.races.flatMap((r) => r.events.map((ev) => ({ meta: r.meta, ev })));
     res.setHeader("Cache-Control", "public, s-maxage=15, stale-while-revalidate=30");
-    res.status(200).json({ at: Date.now(), catalogAt: cat.at, mode: fresh.mode, races, seats: fresh.seats || null });
+    res.status(200).json({ at: Date.now(), catalogAt: cat.at, mode: fresh.mode, races, seats: fresh.seats || null, coverage: cat.coverage || null });
   } catch (e) {
     res.setHeader("Cache-Control", "no-store");
     res.status(502).json({ error: String(e.message || e) });

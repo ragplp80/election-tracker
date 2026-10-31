@@ -43,3 +43,21 @@ test("slimming keeps only the fields the page uses", () => {
   const m = Core.slimMarket({ ticker: "X", yes_bid_dollars: "0.5", rules_primary: "long text", custom_strike: {} });
   assert.deepEqual(m, { ticker: "X", yes_bid_dollars: "0.5" });
 });
+
+test("person markets are recognized as backups that party markets outrank", () => {
+  assert.deepEqual(Core.classify("KXMISENATE"), { type: "senate", st: "MI", special: false, pref: 0 });
+  assert.equal(Core.classify("KXMESENATEPERSON").st, "ME");
+  assert.deepEqual(Core.classify("KXGOVCA"), { type: "gov", st: "CA", pref: 0 });
+  assert.deepEqual(Core.classify("KXCA11PERSON"), { type: "house", st: "CA", dist: 11, pref: 0 });
+  assert.equal(Core.classify("KXALASKAHOUSE").dist, 0);
+  assert.equal(Core.seriesKey(Core.classify("KXMISENATE")), Core.seriesKey(Core.classify("SENATEMI")));
+  for (const t of ["KXGOVCANOMD", "KXGOVWINS", "KXSAOPAULOSENATE", "KXSENATEILD", "KXGOVSENDIFF"]) assert.equal(Core.classify(t), null, t);
+});
+
+test("coverage check flags race-like series we don't recognize, not side bets", () => {
+  assert.ok(Core.untrackedRace("KXHOUSERACE", "House Race Winner?"), "a generic race series gets flagged");
+  for (const [t, ti] of [["SENATETX", "Texas Senate race"], ["KXSENATEILD", "ILD"], ["SENATEPARTYTN", "Tennessee Senate race"],
+    ["KXSENATENYD", "Democratic nominee for New York Senate"], ["HOUSEMOV", "House margin of victory"], ["KXJAPANHOUSE", "Japan House of Representatives"],
+    ["KXGOVSENSPLIT", "Senate-Governor split results"], ["KXMISENATE", "Michigan Senate winner? (Person)"]])
+    assert.equal(Core.untrackedRace(t, ti), false, t);
+});

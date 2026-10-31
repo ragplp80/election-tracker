@@ -827,7 +827,7 @@ function checkReport(){
   const {list:picked,ctlS,ctlH}=pickRaces(),list=[ctlS,ctlH,...picked].filter(Boolean);
   const f=buildFeed(list);
   const r3=v=>v==null?null:Math.round(v*1000)/1000,tm=t=>new Date(t).toISOString().slice(5,16);
-  return{v:"check1",at:new Date(now).toISOString(),lastLook:compareFrom?new Date(compareFrom).toISOString():null,live:f.live,
+  return{v:"check1",at:new Date(now).toISOString(),coverage,lastLook:compareFrom?new Date(compareFrom).toISOString():null,live:f.live,
     filling:bf.running,feed:f.items.map(e=>({t:tm(e.t),t0:e.t0?tm(e.t0):null,id:e.id,text:e.html.replace(/<[^>]+>/g,"")})),
     races:list.filter(r=>r.d!=null).map(r=>{
       const h=(history[r.id]||[]).filter(p=>p[0]>=day);
@@ -1094,7 +1094,7 @@ async function fullSweep(prog){
 }
 // One call for everything: the server keeps a shared copy, refreshed about every 15 seconds.
 // If it fails, the page falls back to asking for each race itself (fullSweep above).
-let snapFailedAt=0,savedFrom=null;
+let snapFailedAt=0,savedFrom=null,coverage=null;   // coverage: what the server's race list found (for ?check)
 async function snapshotSweep(){
   const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),55000);
   try{
@@ -1102,6 +1102,7 @@ async function snapshotSweep(){
     if(!r.ok)throw new Error("HTTP "+r.status);
     const j=await r.json();
     if(!Array.isArray(j.races)||!j.races.length)throw new Error("empty snapshot");
+    coverage=j.coverage||null;
     return{out:j.races,errs:0,seats:j.seats,at:j.at};
   }finally{clearTimeout(t)}
 }

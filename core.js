@@ -20,6 +20,12 @@
     if ((m = t.match(/^HOUSE([A-Z]{2})AL$/)) && STATES[m[1]]) return { type: "house", st: m[1], dist: 0, pref: 2 };
     if ((m = t.match(/^HOUSEPARTY-([A-Z]{2})(\d{1,2})$/)) && STATES[m[1]]) return { type: "house", st: m[1], dist: +m[2], pref: 2 };
     if ((m = t.match(/^KXHOUSE([A-Z]{2})(\d{1,2})$/)) && STATES[m[1]]) return { type: "house", st: m[1], dist: +m[2], pref: 1 };
+    // "Person" markets name candidates rather than parties. Backups only (pref 0): used when a race
+    // has no open party market, e.g. a California top-two race between two members of one party.
+    if ((m = t.match(/^KX([A-Z]{2})SENATE(?:PERSON)?$/)) && STATES[m[1]]) return { type: "senate", st: m[1], special: false, pref: 0 };
+    if ((m = t.match(/^KXGOV([A-Z]{2})$/)) && STATES[m[1]]) return { type: "gov", st: m[1], pref: 0 };
+    if ((m = t.match(/^KX([A-Z]{2})(\d{1,2})PERSON$/)) && STATES[m[1]]) return { type: "house", st: m[1], dist: +m[2], pref: 0 };
+    if (t === "KXALASKAHOUSE") return { type: "house", st: "AK", dist: 0, pref: 0 };
     return null;
   }
 
@@ -51,7 +57,21 @@
     return { event_ticker: ev.event_ticker, markets: (ev.markets || []).map(slimMarket) };
   }
 
-  const Core = { STATES, classify, seriesKey, is2026, slimMarket, slimEvent };
+  // Series that mention a Senate, House or governor race but aren't recognized above. Side bets
+  // (nominees, margins, combos, turnout...) and foreign or state-legislature races are left out.
+  // Used by the coverage check, so a new market format gets noticed instead of silently missed.
+  const SIDE_BET = /nomin|primary|margin|\bmov\b|combo|turnout|exit poll|seats|leader|speaker|redistrict|recount|endorse|run\b|closest|closer|within|sweep|state senate|state house|delegates|council|lieutenant|outright|advance|round|place|matchup|count|lose|losing|majority|control|popular|vote|caucus|minority|chair|referendum|ap call|drop out|ballot|outperform|exact outcome|split|opposite|reddest|independent|seek re-election|special election/i;
+  const FOREIGN = /japan|brazil|chile|argentin|australia|philippine|nigeria|kenya|ital|czech|thailand|nepal|jamaica|colombia|bolivia|paraguay|dominican|peru|hondura|guatemala|zealand|mexic|spain|quebec|são paulo|santa catarina|governorship|state governor/i;
+  function untrackedRace(ticker, title) {
+    if (classify(ticker)) return false;
+    const text = `${ticker} ${title || ""}`;
+    if (!/senate|house|governor|\bgov/i.test(text)) return false;
+    if (/^SENATEPARTY/.test(ticker)) return false;   // the 2024 cycle's series
+    if (/^[A-Z]{3,4}$/.test(title || "") || title === ticker) return false;   // primary series titled "ILD", "MNR"...
+    return !SIDE_BET.test(title || "") && !FOREIGN.test(title || "");
+  }
+
+  const Core = { STATES, classify, seriesKey, is2026, slimMarket, slimEvent, untrackedRace };
   if (typeof module === "object" && module.exports) module.exports = Core;
   else root.Core = Core;
 })(typeof window !== "undefined" ? window : globalThis);

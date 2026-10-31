@@ -40,6 +40,8 @@ async function pool(items, n, fn) {
 async function buildCatalog() {
   const j = await kget("/series?category=Elections");
   const cands = (j.series || []).map((s) => ({ series: s.ticker, ...Core.classify(s.ticker) })).filter((c) => c.type);
+  // Coverage check: race-like series we don't recognize (listed in ?check so new formats get noticed)
+  const untracked = (j.series || []).filter((s) => Core.untrackedRace(s.ticker, s.title)).map((s) => [s.ticker, s.title]);
   if (!cands.some((c) => c.type === "seats")) cands.push({ series: "KXDHOUSESEATS", type: "seats" });
   const look = async (c) => {
     const e = await kget(`/events?series_ticker=${c.series}&status=open&with_nested_markets=true`);
@@ -73,7 +75,9 @@ async function buildCatalog() {
     if (c.type === "seats") { seats = Core.slimEvent(c.events[0]); continue; }
     races.push({ meta, events: c.events.map(Core.slimEvent) });
   }
-  return { at: Date.now(), races, seats, failed: failed.length, missed: failed };
+  const count = (t) => races.filter((r) => r.meta.type === t).length;
+  const coverage = { senate: count("senate"), gov: count("gov"), house: count("house"), untracked };
+  return { at: Date.now(), races, seats, failed: failed.length, missed: failed, coverage };
 }
 
 // Fresh prices for a catalog: a few batched calls by ticker; if a batch comes back short,
