@@ -252,3 +252,11 @@ test("?check adds a report of the feed next to Kalshi's 24-hour-ago prices", asy
   noErrors(pg);
 });
 function loadPageAt(t, url, opts) { const pg = loadPage({ ...opts, url }); t.after(() => pg.close()); return pg; }
+
+test("the Since last look button keeps its own label whatever window is selected", async (t) => {
+  const pg = page(t, { storage: { "et.lastSeen": Date.now() - 5 * 3600e3, "et.ui": { sort: "movers", type: "all", compet: false, auto: false, win: "24h" } } });
+  await loaded(pg);
+  assert.match(pg.text("#winLastBtn"), /^Since/);
+  pg.d.querySelector('#winSeg [data-v="1h"]').click();
+  assert.match(pg.text("#winLastBtn"), /^Since/);
+});

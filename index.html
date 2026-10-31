@@ -454,8 +454,9 @@ newVisitCheck();
 const WIN={"15m":{mins:15,tol:5,big:0.05,short:"15m"},"1h":{mins:60,tol:15,big:0.05,short:"1h"},
   "6h":{mins:360,tol:75,big:0.08,short:"6h"},"24h":{mins:1440,big:0.08,short:"24h"},
   "last":{big:0.08,tol:75}};
-function winLabel(short){
-  if(ui.win!=="last")return WIN[ui.win].short;
+function winLabel(short,which){
+  const w=which||ui.win;
+  if(w!=="last")return WIN[w].short;
   if(!compareFrom)return short?"Since last":"Since last look";
   const d=new Date(compareFrom),same=d.toDateString()===new Date().toDateString();
   const t=d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}).replace(":00","").replace(" ","").toLowerCase();
@@ -768,7 +769,7 @@ function render(){
   $("nMoveLab").textContent="Big moves ("+winLabel(true).toLowerCase()+")";
   const wh=$("winHead");if(wh)wh.textContent=winLabel(true);
   const th=$("trendHead");if(th)th.textContent="Trend ("+winLabel(true).replace(/^Since /,"since ")+") · flags";
-  $("winLastBtn").textContent=compareFrom?winLabel(false):"Since last look";
+  $("winLastBtn").textContent=winLabel(false,"last");
   $("nCall").textContent=list.filter(r=>r.flags.some(f=>f.k==="call")).length;
   // Seats that change hands if every current favorite wins
   const flipCount=t=>{const rs=list.filter(r=>r.type===t);return{D:rs.filter(r=>r.pickup==="D").length,R:rs.filter(r=>r.pickup==="R").length,I:rs.filter(r=>r.pickup==="I").length}};
