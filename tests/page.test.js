@@ -140,7 +140,7 @@ test("Move over: window choice drives the move column; since last look shows the
   pg.d.querySelector('#winSeg [data-v="6h"]').click();
   assert.equal(pg.text("#winHead"), "6h");
   pg.d.querySelector('#winSeg [data-v="last"]').click();
-  assert.match(pg.text("#winHead"), /^Since \d/);
+  assert.match(pg.text("#winHead"), /^Since (\w{3} )?\d/);
   assert.match(pg.text("#nMoveLab"), /since/i);
   noErrors(pg);
 });
