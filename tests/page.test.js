@@ -173,3 +173,45 @@ test("moves are labeled by who gained (D +, R +, I +), never a minus sign", asyn
   assert.doesNotMatch(pg.d.getElementById("table").textContent, /−\d/, "no minus signs in moves");
   noErrors(pg);
 });
+
+test("trend lines cover the same window as the move column", async (t) => {
+  const board = defaultBoard();
+  const now = Math.floor(Date.now() / 1000);
+  board.candles = (tk, ts) => { const v = 0.6 + 0.1 * Math.sin(ts / 7000); return tk.endsWith("-D") ? v : 1 - v; };
+  const pg = page(t, { board, storage: { "et.ui": { sort: "key", type: "all", compet: false, auto: false, win: "1h" } } });
+  await loaded(pg);
+  await waitFor(() => !/filling in trends/.test(pg.text("#updated")) && (pg.w.localStorage.getItem("et.history") || "").length > 1000, { what: "history filled", timeout: 15000 });
+  const span = () => {
+    const pts = pg.row("SENATETX-26").querySelector(".spark polyline").getAttribute("points").split(" ");
+    return pts.length;
+  };
+  const oneHour = span();
+  pg.d.querySelector('#winSeg [data-v="24h"]').click();
+  await waitFor(() => span() > oneHour * 2, { what: "longer trend line for 24h" });
+  assert.match(pg.text("#trendHead"), /24h/);
+  noErrors(pg);
+});
+
+test("move column fills in for quiet and thin races after history loads", async (t) => {
+  const { market } = require("./helpers.js");
+  const board = defaultBoard();
+  const now = Math.floor(Date.now() / 1000), H = 3600;
+  // PA-7 traded once, 5 hours ago, at 80% (now 85%); AK-AL is thin; NC-11 had no trades at all today.
+  board.events.HOUSEAKAL = [{ event_ticker: "HOUSEAKAL-26", markets: [market("HOUSEAKAL-26-D", "Mary Peltola", 0.4, { vol24: 500 }), market("HOUSEAKAL-26-R", "Nick Begich", 0.6, { vol24: 500 })] }];
+  board.events.KXHOUSENC11 = [{ event_ticker: "KXHOUSENC11-26", markets: [market("KXHOUSENC11-26-DEM", "Jamie Ager", 0.87, { vol24: 0 }), market("KXHOUSENC11-26-GOP", "Jennifer Balkcom", 0.13, { vol24: 0 })] }];
+  board.candles = (tk, ts) => {
+    if (tk.startsWith("HOUSEPA7-26")) { const hit = Math.abs(ts - (now - 5 * H)) < 61 || Math.abs(ts - Math.floor((now - 5 * H) / H) * H) < 1; if (!hit) return null; return tk.endsWith("-D") ? 0.8 : 0.2; }
+    if (tk.startsWith("HOUSEAKAL-26")) return tk.endsWith("-D") ? 0.35 : 0.65;
+    return null;
+  };
+  const pg = page(t, { board, storage: { "et.ui": { sort: "key", type: "all", compet: false, auto: false, win: "1h" } } });
+  await loaded(pg);
+  const moveCell = (id) => pg.row(id).querySelectorAll(".c")[1].textContent.trim();
+  await waitFor(() => !/filling in trends/.test(pg.text("#updated")) && moveCell("HOUSEAKAL-26") !== "–", { what: "history filled", timeout: 15000 });
+  assert.notEqual(moveCell("HOUSEPA7-26"), "–", "quiet race: last trade carried forward");
+  assert.equal(moveCell("HOUSEAKAL-26"), "D +5.0", "thin race filled from its history");
+  assert.equal(moveCell("KXHOUSENC11-26"), "0", "no trades today: no move, no lookup needed");
+  pg.d.querySelector('#winSeg [data-v="6h"]').click();
+  assert.equal(moveCell("HOUSEPA7-26"), "D +5.0", "6h move uses the price before the last trade");
+  noErrors(pg);
+});

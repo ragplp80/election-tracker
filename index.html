@@ -285,7 +285,7 @@ footer a{color:var(--muted)}
 
 <div class="table" id="table">
   <div class="row head">
-    <div>Race</div><div>Held</div><div>Odds now</div><div class="rt">Last</div><div class="rt" id="winHead">1h</div><div class="rt">Going in</div><div class="rt">24 h</div><div class="rt">24h vol</div><div class="rt">Trump '24</div><div class="rt">Polls</div><div class="rt">Trend · flags</div>
+    <div>Race</div><div>Held</div><div>Odds now</div><div class="rt">Last</div><div class="rt" id="winHead">1h</div><div class="rt">Going in</div><div class="rt">24 h</div><div class="rt">24h vol</div><div class="rt">Trump '24</div><div class="rt">Polls</div><div class="rt" id="trendHead">Trend · flags</div>
   </div>
   <div class="empty" id="loading">Loading every Senate, governor and House race. The first load takes about 30 seconds.</div>
 </div>
@@ -474,6 +474,11 @@ function pointAt(id,t,tolMins){
   return null;
 }
 function pointAgo(id,mins,tol){return pointAt(id,Date.now()-mins*60e3,tol??Math.max(5,mins/4))}
+function winStart(){
+  if(ui.win==="last"&&compareFrom&&Date.now()-compareFrom<=72*3600e3)return compareFrom;
+  const mins=ui.win==="last"?360:WIN[ui.win].mins;
+  return Date.now()-mins*60e3;
+}
 function winMove(r,v){
   if(ui.win==="24h")return r.d24h;
   if(ui.win==="last"){if(!compareFrom||Date.now()-compareFrom>72*3600e3)return null;const p=pointAt(r.id,compareFrom,WIN.last.tol);return p!=null?v-p:null}
@@ -685,7 +690,12 @@ function renderFeed(list){
 
 // ---------- Rendering ----------
 function spark(id,color){
-  const all=history[id]||[];let h=all.filter(p=>p[0]>=Date.now()-3*3600e3);if(h.length<2)h=all.slice(-180);
+  // The trend line covers the same stretch as the "Move over" window, so line and number agree.
+  const all=history[id]||[],from=winStart();
+  let h=all.filter(p=>p[0]>=from);
+  const before=all.filter(p=>p[0]<from).pop();               // anchor the line at the window's start
+  if(before&&from-before[0]<=90*60e3)h=[[from,before[1]],...h];
+  if(h.length<2)h=all.slice(-180);
   if(h.length<2)return'<svg viewBox="0 0 100 26" preserveAspectRatio="none"><line x1="0" y1="13" x2="100" y2="13" stroke="var(--line)" stroke-width="1"/></svg>';
   const t0=h[0][0],t1=h[h.length-1][0]||t0+1;
   const vs=h.map(p=>p[1]);let lo=Math.min(...vs,0.45),hi=Math.max(...vs,0.55);if(hi-lo<0.1){const m=(hi+lo)/2;lo=m-0.05;hi=m+0.05}
@@ -738,6 +748,7 @@ function render(){
   $("nMove").textContent=list.filter(r=>r.flags.some(f=>f.k==="move")).length;
   $("nMoveLab").textContent="Big moves ("+winLabel(true).toLowerCase()+")";
   const wh=$("winHead");if(wh)wh.textContent=winLabel(true);
+  const th=$("trendHead");if(th)th.textContent="Trend ("+winLabel(true).replace(/^Since /,"since ")+") · flags";
   $("winLastBtn").textContent=compareFrom?winLabel(false):"Since last look";
   $("nCall").textContent=list.filter(r=>r.flags.some(f=>f.k==="call")).length;
   // Seats that change hands if every current favorite wins
@@ -941,7 +952,7 @@ function raceValueFrom(r,priceOf){
   if(r.d!=null)return dProbOf(outs,"p");
   return priceOf(r.leader.ticker);
 }
-function eligible(r){return !!r.series&&(r.type.startsWith("ctl")||r.vol24>=2000)}   // skip thin markets
+function eligible(r){return !!r.series}
 // What this page has already looked up, so switching windows doesn't fetch the same history twice.
 const fetched=new Map(); // id -> {minuteAt, hourlyFrom, hourlyAt}
 function needsMinute(r,now){
@@ -966,16 +977,28 @@ const neededOuts=r=>r.multi||r.d!=null?r.outs.filter(o=>r.multi||o.party==="D"||
 async function fetchValues(r,start,end,periodMin){
   const series=await Promise.all(neededOuts(r).map(async o=>{
     const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${periodMin}`);
-    return[o.ticker,(j.candlesticks||[]).map(c=>[c.end_period_ts,candleValue(c)]).filter(x=>x[1]!=null).sort((a,b)=>a[0]-b[0])];
+    const cs=(j.candlesticks||[]).map(c=>[c.end_period_ts,candleValue(c),num(c.price?.previous_dollars)]).filter(x=>x[1]!=null).sort((a,b)=>a[0]-b[0]);
+    // Price before the first reported period: Kalshi's "previous" price, else the first price seen,
+    // else (nothing traded in the whole range) today's price, since it hasn't moved.
+    const first=cs.length?(cs[0][2]??cs[0][1]):o.p;
+    return[o.ticker,cs,first];
   }));
-  // Walk forward in time, carrying each market's last known price through quiet periods.
-  const times=[...new Set(series.flatMap(([,c])=>c.map(x=>x[0])))].sort((a,b)=>a-b);
-  const idx=new Map(series.map(([tk])=>[tk,0])),cs=new Map(series),last=new Map(),pts=[];
-  for(const t of times){
-    for(const [tk,c] of cs){let i=idx.get(tk);while(i<c.length&&c[i][0]<=t){last.set(tk,c[i][1]);i++}idx.set(tk,i)}
-    const v=raceValueFrom(r,tk=>last.has(tk)?last.get(tk):(cs.has(tk)?null:r.outs.find(o=>o.ticker===tk)?.p??null));
+  // Kalshi only reports periods with activity. Walk a regular grid (every minute or hour) and carry
+  // each market's last price forward, so quiet races still have a value at every point in time.
+  const step=periodMin*60,now=Math.floor(Date.now()/1000),pts=[];
+  const idx=new Map(series.map(([tk])=>[tk,0])),last=new Map(series.map(([tk,,first])=>[tk,first]));
+  for(let t=Math.ceil(start/step)*step;t<=Math.min(end,now);t+=step){
+    for(const [tk,cs] of series){let i=idx.get(tk);while(i<cs.length&&cs[i][0]<=t){last.set(tk,cs[i][1]);i++}idx.set(tk,i)}
+    const v=raceValueFrom(r,tk=>last.has(tk)?last.get(tk):r.outs.find(o=>o.ticker===tk)?.p??null);
     if(v!=null)pts.push([t*1000,v]);
   }
+  return pts;
+}
+// A race with no trades in the past day hasn't moved: fill its history flat without asking Kalshi.
+function flatHistory(r,now){
+  const v=val(r),pts=[];
+  for(let t=now-25*3600e3;t<now-3*3600e3;t+=3600e3)pts.push([t,v]);
+  for(let t=now-3*3600e3;t<=now;t+=60e3)pts.push([t,v]);
   return pts;
 }
 function mergePoints(id,pts,now){
@@ -997,8 +1020,12 @@ async function backfill(){
   await pool(jobs,3,async({r,minute,hourly})=>{
     try{
       const f=fetched.get(r.id)||{};
-      if(hourly){mergePoints(r.id,await fetchValues(r,startH,endH,60),now);f.hourlyAt=now;f.hourlyFrom=startH*1000}
-      if(minute){mergePoints(r.id,await fetchValues(r,startM,endM,1),now);f.minuteAt=now}
+      if(!r.type.startsWith("ctl")&&r.vol24===0){
+        mergePoints(r.id,flatHistory(r,now),now);f.hourlyAt=f.minuteAt=now;f.hourlyFrom=hourlyFrom(now);
+      }else{
+        if(hourly){mergePoints(r.id,await fetchValues(r,startH,endH,60),now);f.hourlyAt=now;f.hourlyFrom=startH*1000}
+        if(minute){mergePoints(r.id,await fetchValues(r,startM,endM,1),now);f.minuteAt=now}
+      }
       fetched.set(r.id,f);
     }catch(e){}
     bf.done++;
