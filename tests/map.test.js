@@ -104,3 +104,22 @@ test("touch: a tap drills in and opens charts without waiting for a click; a dra
   touch(pg.d.getElementById("mapWrap"), "pointerleave", 0, 0);
   assert.equal(pg.text("#mapCrumb"), "Pennsylvania");
 });
+
+test("the map can be hidden; it stays hidden and isn't loaded until shown", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  await waitFor(() => pg.d.querySelector("#mapWrap path"), { what: "map" });
+  pg.d.getElementById("mapToggle").click();
+  assert.ok(pg.d.getElementById("mapCard").classList.contains("collapsed"));
+  assert.equal(pg.text("#mapToggle"), "Show map");
+  assert.equal(JSON.parse(pg.w.localStorage.getItem("et.ui")).mapOpen, false);
+  // Next visit: starts hidden and doesn't fetch the map
+  const again = page(t, { storage: { "et.ui": { sort: "key", type: "all", compet: false, auto: false, win: "1h", mapOpen: false } } });
+  let fetched = false; const real = again.w.fetch; again.w.fetch = (u, o) => { if (/map2026/.test(u)) fetched = true; return real(u, o); };
+  await loaded(again);
+  assert.ok(again.d.getElementById("mapCard").classList.contains("collapsed"));
+  assert.equal(fetched, false, "map file not loaded while hidden");
+  again.d.getElementById("mapToggle").click();
+  await waitFor(() => again.d.querySelector("#mapWrap path"), { what: "map after Show" });
+  assert.equal(again.text("#mapToggle"), "Hide map");
+});

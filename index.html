@@ -186,6 +186,9 @@ footer a{color:var(--muted)}
 .maphead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
 .maphead h2{margin:0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .maphead .crumb{font-size:15px;font-weight:800;font-variation-settings:"wdth" 85}
+.maptoggle{margin-left:auto}
+.mapcard.collapsed{gap:0}
+.mapcard.collapsed>:not(.maphead),.mapcard.collapsed #mapMode,.mapcard.collapsed #mapBack,.mapcard.collapsed #mapCrumb{display:none}
 .mapback{border:1px solid var(--line);background:var(--surface2);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:700}
 .mapwrap{position:relative}
 .mapwrap svg{display:block;width:100%;height:auto;max-height:70vh}
@@ -305,6 +308,11 @@ footer a{color:var(--muted)}
   <div class="bal" id="balH"><div class="balhead"><h2>House if the odds are right</h2></div><div class="balnote">Loading…</div></div>
 </section>
 
+<section class="feed" id="feed" aria-live="polite">
+  <div class="feedhead"><h2>What changed</h2><span id="feedSub">Loading…</span></div>
+  <div class="feedlist" id="feedList"></div>
+</section>
+
 <section class="mapcard" id="mapCard">
   <div class="maphead">
     <h2>Map</h2>
@@ -315,6 +323,7 @@ footer a{color:var(--muted)}
     </div>
     <button class="mapback" id="mapBack" hidden>← All states</button>
     <span class="crumb" id="mapCrumb"></span>
+    <button class="mapback maptoggle" id="mapToggle" aria-expanded="true" aria-controls="mapCard">Hide map</button>
   </div>
   <div class="mapwrap" id="mapWrap"><div class="empty" style="padding:30px">Loading map…</div></div>
   <div class="mapinfo" id="mapInfo">Tap a state to see its races and House districts.</div>
@@ -322,10 +331,6 @@ footer a{color:var(--muted)}
   <div class="mapraces" id="mapRaces" hidden></div>
 </section>
 
-<section class="feed" id="feed" aria-live="polite">
-  <div class="feedhead"><h2>What changed</h2><span id="feedSub">Loading…</span></div>
-  <div class="feedlist" id="feedList"></div>
-</section>
 
 <section class="tools">
   <span class="seglabel">Sort</span>
@@ -896,7 +901,15 @@ function buildMapSvg(){
   body+=`<path class="st-line" d="${S.d}" style="stroke:var(--fg);stroke-width:${(w/300).toFixed(3)};stroke-opacity:.5"/>`;
   $("mapWrap").innerHTML=`<svg viewBox="${(x0-pad).toFixed(1)} ${(y0-pad).toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" role="img" aria-label="Map of ${esc(S.n)}">${hatch}${body}</svg>`;
 }
+// The map can be hidden to save scrolling; while hidden it isn't loaded or drawn.
+function applyMapOpen(){
+  const open=ui.mapOpen!==false;
+  $("mapCard").classList.toggle("collapsed",!open);
+  $("mapToggle").textContent=open?"Hide map":"Show map";
+  $("mapToggle").setAttribute("aria-expanded",open);
+}
 function renderMap(list){
+  if(ui.mapOpen===false)return;
   if(!mapData){loadMap();return}
   const view=`${mapView.mode}|${mapView.st||""}`;
   if(view!==mapBuilt){buildMapSvg();mapBuilt=view}
@@ -1471,6 +1484,7 @@ function saveUi(){store.set("et.ui",ui)}
 $("refresh").onclick=refresh;
 $("feed").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("mapMode").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;mapView.mode=v;ui.mapMode=v;saveUi();setPressed("mapMode",v);render()};
+$("mapToggle").onclick=()=>{ui.mapOpen=ui.mapOpen===false;saveUi();applyMapOpen();if(ui.mapOpen)render()};
 $("mapBack").onclick=()=>{mapView.st=null;delete $("mapInfo").dataset.hover;render()};
 function mapTap(target){
   const el=target.closest?.("[data-key],[data-st]");if(!el||!mapData)return;
@@ -1516,7 +1530,7 @@ $("winSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.win=v;setPre
   if(!busy&&races.size&&!bf.running)backfill()};
 $("sortSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.sort=v;setPressed("sortSeg",v);saveUi();render()};
 $("typeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.type=v;setPressed("typeSeg",v);saveUi();render()};
-setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);setPressed("mapMode",mapView.mode);
+setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);setPressed("mapMode",mapView.mode);applyMapOpen();
 $("auto").setAttribute("aria-pressed",ui.auto);$("compet").setAttribute("aria-pressed",ui.compet);
 if(ui.auto)keepAwake(true);
 if(/[?&]check\b/.test(location.search)){
