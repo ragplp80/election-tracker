@@ -76,3 +76,31 @@ test("a redrawn state without shapes shows one tile per district", async (t) => 
   assert.match(pg.text("#mapInfo"), /New 2026 district lines/);
   assert.match(pg.d.querySelector('#mapTiles [data-key="CA-22"]').className, /t-none/);
 });
+
+test("touch: a tap drills in and opens charts without waiting for a click; a drag doesn't", async (t) => {
+  const pg = page(t);
+  await loaded(pg);
+  await waitFor(() => pg.d.querySelector('#mapWrap path[data-key="PA-7"]'), { what: "map" });
+  // jsdom has no PointerEvent: a MouseEvent of the pointer type with pointerType set behaves the same here
+  const touch = (el, type, x, y) => { const ev = new pg.w.MouseEvent(type, { bubbles: true, clientX: x, clientY: y }); Object.defineProperty(ev, "pointerType", { value: "touch" }); el.dispatchEvent(ev); };
+  const pa = pg.d.querySelector('#mapWrap path[data-key="PA-7"]');
+  // A drag (scrolling the page) does nothing
+  touch(pa, "pointerdown", 100, 100); touch(pa, "pointerup", 100, 160);
+  assert.equal(pg.text("#mapCrumb"), "");
+  // A tap drills in, even with no click event at all (what iPad Safari sometimes does)
+  touch(pa, "pointerdown", 100, 100); touch(pa, "pointerup", 102, 101);
+  assert.equal(pg.text("#mapCrumb"), "Pennsylvania");
+  const pa7 = pg.d.querySelector('#mapWrap path[data-key="PA-7"]');
+  touch(pa7, "pointerdown", 50, 50); touch(pa7, "pointerup", 50, 50);
+  pa7.dispatchEvent(new pg.w.MouseEvent("click", { bubbles: true }));   // a late click is ignored, not doubled
+  await waitFor(() => pg.text("#sheetTitle") === "PA-7", { what: "chart opened by tap" });
+  assert.equal(pg.d.querySelectorAll("#sheetBg").length, 1);
+  // The browser's follow-up click landing on the backdrop must not close the chart it just opened
+  const bg = pg.d.getElementById("sheetBg");
+  bg.dispatchEvent(new pg.w.MouseEvent("click", { bubbles: true }));
+  assert.ok(pg.d.getElementById("sheetBg"), "still open");
+  await waitFor(() => !/Loading/.test(pg.text("#chartbox")), { what: "chart loaded" });
+  // Touch never triggers the hover redraw
+  touch(pg.d.getElementById("mapWrap"), "pointerleave", 0, 0);
+  assert.equal(pg.text("#mapCrumb"), "Pennsylvania");
+});

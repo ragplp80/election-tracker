@@ -1316,7 +1316,8 @@ function openDetail(id){
     <div class="newslist" id="newsList"></div>
   </div>`;
   document.body.appendChild(bg);document.body.style.overflow="hidden";
-  bg.addEventListener("click",e=>{if(e.target===bg)closeDetail()});
+  const openedAt=clockNow();   // ignore a stray tap on the backdrop right as it opens
+  bg.addEventListener("click",e=>{if(e.target===bg&&clockNow()-openedAt>500)closeDetail()});
   $("sheetClose").onclick=closeDetail;$("sheetClose").focus();
   $("rangeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;detail.range=v;store.set("et.range",v);setPressed("rangeSeg",v);loadDetail()};
   $("newsToggle").onclick=()=>{ui.news=ui.news===false;saveUi();$("newsToggle").setAttribute("aria-pressed",ui.news!==false);loadNews(r);drawChart()};
@@ -1471,19 +1472,38 @@ $("refresh").onclick=refresh;
 $("feed").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("mapMode").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;mapView.mode=v;ui.mapMode=v;saveUi();setPressed("mapMode",v);render()};
 $("mapBack").onclick=()=>{mapView.st=null;delete $("mapInfo").dataset.hover;render()};
-$("mapWrap").addEventListener("click",e=>{
-  const el=e.target.closest("[data-key],[data-st]");if(!el||!mapData)return;
-  if(!mapView.st){mapView.st=el.dataset.st;delete $("mapInfo").dataset.hover;render();$("mapCard").scrollIntoView({block:"nearest"});return}
+function mapTap(target){
+  const el=target.closest?.("[data-key],[data-st]");if(!el||!mapData)return;
+  if(!mapView.st){mapView.st=el.dataset.st;delete $("mapInfo").dataset.hover;render();$("mapCard").scrollIntoView?.({block:"nearest"});return}
   const key=el.dataset.key;
   if(key){const r=mapRaceLookup(pickRaces().list).house.get(key);if(r)openDetail(r.id);else $("mapInfo").innerHTML=mapDescribe(key)}
   else{const look=mapRaceLookup(pickRaces().list),r=mapView.mode==="senate"?look.sen.get(el.dataset.st):look.gov.get(el.dataset.st);if(r)openDetail(r.id)}
+}
+// Touch: act when the finger lifts (a tap, not a scroll). iPad Safari can drop the follow-up click
+// on SVG shapes, so taps don't wait for it; the click that may follow is ignored.
+let mapDown=null,mapTouchAt=0;
+$("mapWrap").addEventListener("pointerdown",e=>{if(e.pointerType!=="mouse")mapDown={x:e.clientX,y:e.clientY,t:clockNow(),target:e.target}});
+$("mapWrap").addEventListener("pointerup",e=>{
+  if(e.pointerType==="mouse"||!mapDown)return;
+  const d=mapDown;mapDown=null;
+  if(Math.hypot(e.clientX-d.x,e.clientY-d.y)>12||clockNow()-d.t>700)return;   // a scroll or long press
+  mapTouchAt=clockNow();mapTap(d.target);
 });
+// The tap is handled: stop the browser's follow-up click, which would land on whatever just opened
+$("mapWrap").addEventListener("touchend",e=>{if(clockNow()-mapTouchAt<100&&e.cancelable)e.preventDefault()},{passive:false});
+$("mapWrap").addEventListener("pointercancel",()=>{mapDown=null});
+$("mapWrap").addEventListener("click",e=>{if(clockNow()-mapTouchAt<800)return;mapTap(e.target)});
+// Hover (mouse only): show what's under the pointer without redrawing anything else
 $("mapWrap").addEventListener("pointerover",e=>{
-  if(e.pointerType==="touch")return;
+  if(e.pointerType!=="mouse")return;
   const el=e.target.closest("[data-key],[data-st]");if(!el||!mapData)return;
   $("mapInfo").dataset.hover="1";$("mapInfo").innerHTML=mapDescribe(el.dataset.key,el.dataset.st);
 });
-$("mapWrap").addEventListener("pointerleave",()=>{delete $("mapInfo").dataset.hover;if(mapData)render()});
+$("mapWrap").addEventListener("pointerleave",e=>{
+  if(e.pointerType!=="mouse")return;
+  delete $("mapInfo").dataset.hover;
+  $("mapInfo").innerHTML=mapView.st?"Tap a district to open its chart.":"Tap a state to see its races and House districts.";
+});
 $("mapRaces").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("balance").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("table").addEventListener("click",e=>{const row=e.target.closest(".row[data-id]");if(row)openDetail(row.dataset.id)});
