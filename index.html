@@ -336,7 +336,7 @@ const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.
 
 // ---------- Small helpers ----------
 const $=id=>document.getElementById(id);
-const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 const num=v=>{const n=parseFloat(v);return Number.isFinite(n)?n:null};
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmtPct=p=>p==null?"–":Math.round(p*100)+"%";
@@ -455,7 +455,24 @@ function buildRace(meta,ev){
 // ---------- State ----------
 let series=[],races=new Map(),prevSnap=new Map(),busy=false,lastOk=null,errCount=0;
 let houseSeats=null; // {buckets:[{lo,hi,mid,p,label,ticker}], id}
-let history=store.get("et.history",{});           // id -> [[t, value]]
+let history=loadHistory();                        // id -> [[ms, value]], oldest first
+// Saved compactly (minutes since 1970, value x 10,000 as a whole number) to stay well under the
+// browser's ~5 MB storage limit. If the store is full anyway, keep less rather than lose it all.
+function loadHistory(){
+  const raw=store.get("et.history",{});
+  if(raw&&raw.v===2){const h={};for(const id in raw.d)h[id]=raw.d[id].map(([m,x])=>[m*60e3,x/1e4]);return h}
+  return raw&&typeof raw==="object"?raw:{};   // older format: already [[ms, value]]
+}
+function saveHistory(){
+  const pack=keep=>{const d={};for(const id in history){const pts=history[id].filter(keep);if(pts.length)d[id]=pts.map(([t,v])=>[Math.round(t/60e3),Math.round(v*1e4)])}return{v:2,d}};
+  const now=clockNow();
+  if(store.set("et.history",pack(()=>true)))return true;
+  if(store.set("et.history",pack(p=>p[0]>=now-26*3600e3)))return true;      // drop "since last look" beyond a day
+  if(store.set("et.history",pack(p=>p[0]>=now-6*3600e3)))return true;      // the last few hours only
+  if(store.set("et.history",pack(p=>p[0]>=now-90*60e3)))return true;
+  try{localStorage.removeItem("et.history")}catch(e){}                        // never leave a stale copy behind
+  return false;
+}
 // Daily baseline: each race's odds at midnight Eastern, read from price history, so it is the same
 // moment for everyone no matter when the page was opened. On election night it moves to 6pm ET.
 function etTs(dateStr,hour){
@@ -941,7 +958,7 @@ async function refresh(){
     }
     // Trim history: every point for 6 hours, one per hour back to 72 hours
     for(const k in history){history[k]=compactHistory(history[k],now);if(!history[k].length)delete history[k]}
-    store.set("et.history",history);
+    saveHistory();
     lastOk=new Date(clockNow());lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
     saveSnapshot(result.out,lastMode==="snapshot"?result.seats:null);
     store.set("et.lastSeen",now);
@@ -961,11 +978,15 @@ let lastSecs=null;
 // Keep every point from the last 6 hours, one per hour back to 72 hours, so "6h" and
 // "since last look" still work after the page has been closed for a while.
 function compactHistory(h,now){
-  const out=[],seen=new Set();
-  for(const p of h){
+  const out=[],hours=new Set();let lastMin=null;
+  for(const p of h){                                   // h is sorted oldest first
     if(p[0]<now-72*3600e3)continue;
-    if(p[0]>=now-6*3600e3){out.push(p);continue}
-    const b=Math.floor(p[0]/3600e3);if(seen.has(b))continue;seen.add(b);out.push(p);
+    if(p[0]>=now-6*3600e3){
+      const m=Math.floor(p[0]/60e3);
+      if(m===lastMin)out[out.length-1]=p;else{out.push(p);lastMin=m}   // latest value in each minute
+      continue;
+    }
+    const b=Math.floor(p[0]/3600e3);if(hours.has(b))continue;hours.add(b);out.push(p);
   }
   return out.slice(-700);
 }
@@ -1035,9 +1056,10 @@ function flatHistory(r,now){
 }
 function mergePoints(id,pts,now){
   if(!pts.length)return;
-  const have=history[id]||[];
-  const merged=have.concat(pts.filter(p=>!have.some(q=>Math.abs(q[0]-p[0])<45e3))).sort((a,b)=>a[0]-b[0]);
-  history[id]=compactHistory(merged,now);
+  const byMin=new Map();
+  for(const p of pts)byMin.set(Math.round(p[0]/60e3),p);
+  for(const p of history[id]||[])byMin.set(Math.round(p[0]/60e3),p);   // points already here win
+  history[id]=compactHistory([...byMin.values()].sort((a,b)=>a[0]-b[0]),now);
 }
 let houseBase=null; // {at, median, mean}
 async function loadHouseBase(){
@@ -1081,7 +1103,7 @@ async function backfill(){
     bf.done++;
     if(++sinceRender>=8){sinceRender=0;for(const x of races.values())metrics(x);render();renderStatus()}
   });
-  store.set("et.history",history);
+  saveHistory();
   bf.running=false;
   for(const x of races.values())metrics(x);render();renderStatus();
 }

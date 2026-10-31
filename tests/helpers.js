@@ -147,6 +147,7 @@ function loadPage(opts = {}) {
     runScripts: "dangerously", pretendToBeVisual: true, url: opts.url || "https://tracker.test/",
     beforeParse(w) {
       w.fetch = pageFetch;
+      if (opts.now != null) { const start = Date.now(); w.__testNow = () => opts.now + (Date.now() - start); }
       w.navigator.wakeLock = { request: async () => ({ release: async () => {} }) };
       for (const [k, v] of Object.entries(opts.storage || {})) w.localStorage.setItem(k, JSON.stringify(v));
       w.console.error = (...a) => errors.push(a.join(" "));
