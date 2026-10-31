@@ -260,3 +260,17 @@ test("the Since last look button keeps its own label whatever window is selected
   pg.d.querySelector('#winSeg [data-v="1h"]').click();
   assert.match(pg.text("#winLastBtn"), /^Since/);
 });
+
+test("trend lines are scaled to their own range and colored by direction", async (t) => {
+  const now = Date.now(), H = 3600e3, hist = {};
+  const add = (id, f) => { hist[id] = []; for (let x = now - 24 * H; x <= now; x += 30 * 60e3) hist[id].push([x, f((now - x) / H)]); };
+  add("SENATEGA-26", (a) => (a > 10 ? 0.71 : 0.8));     // 9-point step toward Ossoff
+  add("SENATETX-26", () => 0.68);                       // flat
+  const pg = page(t, { storage: { "et.history": hist, "et.ui": { sort: "key", type: "all", compet: false, auto: false, win: "24h" } } });
+  await loaded(pg);
+  const line = (id) => pg.row(id).querySelector(".spark polyline");
+  const ga = line("SENATEGA-26"), ys = ga.getAttribute("points").split(" ").map((p) => +p.split(",")[1]);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 34 * 0.6, "a 9-point move fills most of the box");
+  assert.equal(ga.getAttribute("stroke"), "var(--dem)");
+  assert.equal(line("SENATETX-26").getAttribute("stroke"), "var(--muted)", "flat race stays gray");
+});
