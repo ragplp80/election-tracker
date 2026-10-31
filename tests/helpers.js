@@ -98,7 +98,16 @@ function fakeKalshi(board, log = []) {
 function useFakeKalshi(board, log) {
   const handle = fakeKalshi(board, log);
   const realFetch = global.fetch;
-  global.fetch = async (url, opts) => (String(url).startsWith(KALSHI) ? handle(String(url)) : realFetch(url, opts));
+  global.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.startsWith(KALSHI)) return handle(u);
+    if (u.startsWith("https://news.google.com/")) {   // fake Google News: board.news(query) -> RSS text
+      log.push("NEWS " + new URL(u).searchParams.get("q"));
+      const body = board.news ? board.news(new URL(u).searchParams.get("q")) : "<rss><channel></channel></rss>";
+      return { ok: true, status: 200, headers: { get: () => null }, text: async () => body };
+    }
+    return realFetch(url, opts);
+  };
   return () => { global.fetch = realFetch; };
 }
 
@@ -134,6 +143,10 @@ function loadPage(opts = {}) {
       if (opts.snapshot === "fail") return resp(502, { error: "down" });
       if (opts.snapshot === "slow") await new Promise((r) => { releaseSnapshot = r; });
       const r = await callHandler(snapshotHandler);
+      return resp(r.statusCode, r.body);
+    }
+    if (u.startsWith("/api/news?")) {
+      const r = await callHandler(require(path.join(ROOT, "api/news.js")), Object.fromEntries(new URL("http://x" + u).searchParams));
       return resp(r.statusCode, r.body);
     }
     if (u.startsWith("/api/kalshi?path=")) {

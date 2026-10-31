@@ -181,6 +181,18 @@ footer a{color:var(--muted)}
 .today em{font-style:normal;color:var(--muted);font-weight:600}
 .today.sm{font-size:12px;padding:1px 6px;margin-left:4px}
 
+/* Race news in the detail sheet */
+.newshead{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:10px}
+.newshead h4{margin:0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.newslist{display:grid;gap:2px}
+.ni{display:grid;grid-template-columns:62px 1fr;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px;line-height:1.35}
+.ni:first-child{border-top:0}
+.ni time{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+.ni a{color:var(--fg);text-decoration:none;font-weight:600}
+.ni a:hover,.ni a:focus-visible{text-decoration:underline}
+.ni small{display:block;color:var(--muted);font-size:11.5px;margin-top:1px}
+.newsmsg{font-size:13px;color:var(--muted);padding:4px 0}
+
 /* Race detail sheet */
 .row[data-id],.ctl[data-id]{cursor:pointer}
 .row[data-id]:hover{background:var(--surface2)}
@@ -306,6 +318,7 @@ footer a{color:var(--muted)}
   <div>Balance of power: each Senate race is counted for its current favorite. Safe = favorite 90%+, likely 75–90%, lean 60–75%, toss-up under 60%. Seats not up this year: 34 Democratic (including King and Sanders, who caucus with Democrats) and 31 Republican. Democrats need 51 for control; Republicans need 50 because Vice President Vance breaks ties. The House has markets on only about 100 of 435 districts, so its seat count comes from the market on how many seats Democrats will win: the expected number, with the range covering the middle 80% of outcomes.</div>
   <div>What changed lists lead changes, races crossing 75% or 90%, and big moves, built from price history. Before election night a big move is 5+ points within 4 hours; on election night (from 5pm ET) it is 4+ points within 15 minutes. "New" marks anything since your last look. Older entries come from hourly prices, so their times are to the hour.</div>
   <div>Trump '24 is the 2024 presidential margin (R+ or D+, rounded): statewide for Senate and governor, by district for the House. Districts in redrawn states use the new lines where recalculated results exist (Utah, Florida, TX-28) and are blank otherwise. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
+  <div>Latest news in each race's chart comes from Google News searches for the candidates, from the past three days; amber ticks on the chart mark when each headline was published. Switch it off in any race's chart.</div>
   <div>Odds update about every 15 seconds.</div>
   <div id="checkBox" hidden><button class="btn" id="checkBtn">Copy check report</button> <span id="checkMsg"></span><textarea id="checkOut" readonly style="width:100%;height:90px;margin-top:6px;font:11px ui-monospace,monospace;background:var(--surface2);color:var(--fg);border:1px solid var(--line);border-radius:6px"></textarea></div>
 </footer>
@@ -1134,12 +1147,51 @@ function openDetail(id){
     <div class="readout num" id="readout">Drag across the chart to read exact odds.</div>
     <div class="chartbox" id="chartbox"><div class="chartmsg">Loading price history…</div></div>
     <div class="sheet-meta num" id="sheetMeta"></div>
+    <div class="newshead"><h4>Latest news</h4><button class="toggle" id="newsToggle" aria-pressed="${ui.news!==false}"><span>News</span><span class="switch"></span></button></div>
+    <div class="newslist" id="newsList"></div>
   </div>`;
   document.body.appendChild(bg);document.body.style.overflow="hidden";
   bg.addEventListener("click",e=>{if(e.target===bg)closeDetail()});
   $("sheetClose").onclick=closeDetail;$("sheetClose").focus();
   $("rangeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;detail.range=v;store.set("et.range",v);setPressed("rangeSeg",v);loadDetail()};
-  renderDetailMeta();loadDetail();
+  $("newsToggle").onclick=()=>{ui.news=ui.news===false;saveUi();$("newsToggle").setAttribute("aria-pressed",ui.news!==false);loadNews(r);drawChart()};
+  renderDetailMeta();loadDetail();loadNews(r);
+}
+
+// ---------- Race news: recent headlines, to see why a race is moving (switch off in the sheet) ----------
+// The search: the two main candidates by name with the office, or the state and office when Kalshi
+// labels the outcomes by party ("Democratic party").
+function newsQuery(r){
+  if(r.type==="ctlS")return"Senate control midterms 2026";
+  if(r.type==="ctlH")return"House majority midterms 2026";
+  const office=r.type==="senate"?"Senate":r.type==="gov"?"governor":"House";
+  const people=r.outs.slice(0,3).filter(o=>o.p>=0.05&&!/\bparty\b|^(other|someone|yes|no)$/i.test(o.name)&&/\s/.test(o.name)).slice(0,2).map(o=>`"${o.name}"`);
+  if(people.length)return`${people.join(" OR ")} ${office}`;
+  return`"${STATES[r.st]||r.st}" ${office} race`;
+}
+async function loadNews(r){
+  const box=$("newsList");if(!box)return;
+  if(ui.news===false){box.innerHTML='<div class="newsmsg">News is off. Switch it on to see recent headlines for this race.</div>';detail.news=null;return}
+  box.innerHTML='<div class="newsmsg">Loading headlines…</div>';
+  const id=detail.id;
+  try{
+    const res=await fetch("/api/news?q="+encodeURIComponent(newsQuery(r)),{headers:{accept:"application/json"}});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const j=await res.json();
+    if(!detail||detail.id!==id||ui.news===false)return;
+    detail.news=j.items||[];
+    box.innerHTML=detail.news.length?detail.news.slice(0,8).map(n=>`<div class="ni"><time class="num">${esc(agoText(n.at))}</time><div><a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><small>${esc(n.source||"")}</small></div></div>`).join("")
+      :'<div class="newsmsg">No headlines about this race in the past three days.</div>';
+    drawChart();
+  }catch(e){
+    if(detail&&detail.id===id)box.innerHTML='<div class="newsmsg">Couldn\'t load headlines right now.</div>';
+  }
+}
+function agoText(t){
+  const m=Math.round((clockNow()-t)/60e3);
+  if(m<60)return Math.max(1,m)+"m ago";
+  if(m<48*60)return Math.round(m/60)+"h ago";
+  return Math.round(m/1440)+"d ago";
 }
 function closeDetail(){
   const bg=$("sheetBg");if(bg)bg.remove();document.body.style.overflow="";
@@ -1194,7 +1246,7 @@ function drawChart(){
   const series=detail.series.filter(s=>s.pts.length>1);
   if(!series.length){box.innerHTML='<div class="chartmsg">No trades in this period. Try a longer range.</div>';return}
   const W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(320,Math.max(220,W*0.42)));
-  const L=38,R=12,T=10,B=26,iw=W-L-R,ih=H-T-B;
+  const L=38,R=12,T=16,B=26,iw=W-L-R,ih=H-T-B;
   let t0=Infinity,t1=-Infinity;for(const s of series)for(const p of s.pts){t0=Math.min(t0,p[0]);t1=Math.max(t1,p[0])}
   if(t1-t0<60e3)t0=t1-60e3;
   const X=t=>L+((t-t0)/(t1-t0))*iw,Y=v=>T+(1-v)*ih;
@@ -1210,7 +1262,10 @@ function drawChart(){
     const last=s.pts[s.pts.length-1];
     lines+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${X(last[0])}" cy="${Y(last[1])}" r="3.5" fill="${s.color}"/>`;
   }
-  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Win probability over time">${g}${lines}<g id="cross" visibility="hidden"><line id="crossL" y1="${T}" y2="${T+ih}" stroke="var(--fg)" stroke-width="1" stroke-opacity=".5"/>${series.map((s,i)=>`<circle id="crossD${i}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`).join("")}</g><rect x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent" id="hit"/></svg>`;
+  // Headlines inside the chart's time range: a small tick along the top
+  const news=(ui.news!==false&&detail.news||[]).filter(n=>n.at>=t0&&n.at<=t1);
+  const marks=news.map(n=>`<path d="M${X(n.at).toFixed(1)} ${T} l-4 -7 h8 z" fill="var(--move)" opacity=".9"><title>${esc(n.title)}</title></path><line x1="${X(n.at).toFixed(1)}" x2="${X(n.at).toFixed(1)}" y1="${T}" y2="${T+ih}" stroke="var(--move)" stroke-width="1" stroke-opacity=".25"/>`).join("");
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Win probability over time">${g}${marks}${lines}<g id="cross" visibility="hidden"><line id="crossL" y1="${T}" y2="${T+ih}" stroke="var(--fg)" stroke-width="1" stroke-opacity=".5"/>${series.map((s,i)=>`<circle id="crossD${i}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`).join("")}</g><rect x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent" id="hit"/></svg>`;
   const svg=box.querySelector("svg"),hit=box.querySelector("#hit");
   const valueAt=(pts,t)=>{let best=pts[0];for(const p of pts){if(p[0]<=t)best=p;else break}return best};
   const show=ev=>{
@@ -1219,7 +1274,8 @@ function drawChart(){
     $("cross").setAttribute("visibility","visible");$("crossL").setAttribute("x1",X(t));$("crossL").setAttribute("x2",X(t));
     const vals=series.map((s,i)=>{const p=valueAt(s.pts,t);$("crossD"+i).setAttribute("cx",X(t));$("crossD"+i).setAttribute("cy",Y(p[1]));return`<b style="color:${s.color}">${esc(s.o.name)} ${fmtPct(p[1])}</b>`});
     const d=new Date(t);
-    $("readout").innerHTML=`${esc(d.toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))} · ${vals.join(" · ")}`;
+    const near=news.find(n=>Math.abs(n.at-t)<=span*0.015);
+    $("readout").innerHTML=`${esc(d.toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))} · ${vals.join(" · ")}${near?` · <span style="color:var(--move)">News: ${esc(near.title)}</span>`:""}`;
   };
   const hide=()=>{$("cross").setAttribute("visibility","hidden");$("readout").textContent="Drag across the chart to read exact odds."};
   hit.addEventListener("pointerdown",e=>{show(e)});
