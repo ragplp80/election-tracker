@@ -313,7 +313,7 @@ footer a{color:var(--muted)}
   <div class="feedlist" id="feedList"></div>
 </section>
 
-<section class="mapcard" id="mapCard">
+<section class="mapcard collapsed" id="mapCard">
   <div class="maphead">
     <h2>Map</h2>
     <div class="seg" id="mapMode">
@@ -323,7 +323,7 @@ footer a{color:var(--muted)}
     </div>
     <button class="mapback" id="mapBack" hidden>← All states</button>
     <span class="crumb" id="mapCrumb"></span>
-    <button class="mapback maptoggle" id="mapToggle" aria-expanded="true" aria-controls="mapCard">Hide map</button>
+    <button class="mapback maptoggle" id="mapToggle" aria-expanded="false" aria-controls="mapCard">Show map</button>
   </div>
   <div class="mapwrap" id="mapWrap"><div class="empty" style="padding:30px">Loading map…</div></div>
   <div class="mapinfo" id="mapInfo">Tap a state to see its races and House districts.</div>
@@ -901,15 +901,15 @@ function buildMapSvg(){
   body+=`<path class="st-line" d="${S.d}" style="stroke:var(--fg);stroke-width:${(w/300).toFixed(3)};stroke-opacity:.5"/>`;
   $("mapWrap").innerHTML=`<svg viewBox="${(x0-pad).toFixed(1)} ${(y0-pad).toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" role="img" aria-label="Map of ${esc(S.n)}">${hatch}${body}</svg>`;
 }
-// The map can be hidden to save scrolling; while hidden it isn't loaded or drawn.
+// The map starts closed to save scrolling; while closed it isn't loaded or drawn.
 function applyMapOpen(){
-  const open=ui.mapOpen!==false;
+  const open=ui.mapOpen===true;
   $("mapCard").classList.toggle("collapsed",!open);
   $("mapToggle").textContent=open?"Hide map":"Show map";
   $("mapToggle").setAttribute("aria-expanded",open);
 }
 function renderMap(list){
-  if(ui.mapOpen===false)return;
+  if(ui.mapOpen!==true)return;
   if(!mapData){loadMap();return}
   const view=`${mapView.mode}|${mapView.st||""}`;
   if(view!==mapBuilt){buildMapSvg();mapBuilt=view}
@@ -1484,7 +1484,7 @@ function saveUi(){store.set("et.ui",ui)}
 $("refresh").onclick=refresh;
 $("feed").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("mapMode").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;mapView.mode=v;ui.mapMode=v;saveUi();setPressed("mapMode",v);render()};
-$("mapToggle").onclick=()=>{ui.mapOpen=ui.mapOpen===false;saveUi();applyMapOpen();if(ui.mapOpen)render()};
+$("mapToggle").onclick=()=>{ui.mapOpen=ui.mapOpen!==true;saveUi();applyMapOpen();if(ui.mapOpen)render()};
 $("mapBack").onclick=()=>{mapView.st=null;delete $("mapInfo").dataset.hover;render()};
 function mapTap(target){
   const el=target.closest?.("[data-key],[data-st]");if(!el||!mapData)return;
