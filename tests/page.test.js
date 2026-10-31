@@ -307,3 +307,19 @@ test("daily baseline: seats and odds compared with midnight Eastern", async (t) 
   assert.match(pg.text("#flipLine"), /Senate D \+\d+ \/ R \+\d+ \(D \+1 today\)/);
   noErrors(pg);
 });
+
+test("trend lines plot the leader's chance: a Republican pulling ahead rises in red", async (t) => {
+  const now = Date.now(), H = 3600e3, hist = {};
+  const add = (id, f) => { hist[id] = []; for (let x = now - 24 * H; x <= now; x += 30 * 60e3) hist[id].push([x, f((now - x) / H)]); };
+  add("SENATEOHS-26", (a) => (a > 10 ? 0.35 : 0.27));   // Husted (R) leads and gains 8 points
+  add("SENATEGA-26", (a) => (a > 10 ? 0.86 : 0.8));     // Ossoff (D) leads but slips 6 points
+  const pg = page(t, { storage: { "et.history": hist, "et.ui": { sort: "key", type: "all", compet: false, auto: false, win: "24h" } } });
+  await loaded(pg);
+  const ends = (id) => { const ys = pg.row(id).querySelector(".spark polyline").getAttribute("points").split(" ").map((p) => +p.split(",")[1]); return [ys[0], ys[ys.length - 1]]; };
+  const [ohStart, ohEnd] = ends("SENATEOHS-26");
+  assert.ok(ohEnd < ohStart, "Republican leader gaining: line rises (smaller y is higher)");
+  assert.equal(pg.row("SENATEOHS-26").querySelector(".spark polyline").getAttribute("stroke"), "var(--rep)");
+  const [gaStart, gaEnd] = ends("SENATEGA-26");
+  assert.ok(gaEnd > gaStart, "Democratic leader slipping: line falls");
+  assert.equal(pg.row("SENATEGA-26").querySelector(".spark polyline").getAttribute("stroke"), "var(--rep)", "colored by who gained");
+});
