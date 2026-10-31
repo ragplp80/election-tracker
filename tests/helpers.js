@@ -144,7 +144,7 @@ function loadPage(opts = {}) {
   };
 
   const dom = new JSDOM(html, {
-    runScripts: "dangerously", pretendToBeVisual: true, url: "https://tracker.test/",
+    runScripts: "dangerously", pretendToBeVisual: true, url: opts.url || "https://tracker.test/",
     beforeParse(w) {
       w.fetch = pageFetch;
       w.navigator.wakeLock = { request: async () => ({ release: async () => {} }) };

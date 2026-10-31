@@ -298,6 +298,7 @@ footer a{color:var(--muted)}
   <div>What changed lists lead changes, races crossing 75% or 90%, and big moves, built from price history. Before election night a big move is 5+ points within 4 hours; on election night (from 5pm ET) it is 4+ points within 15 minutes. "New" marks anything since your last look. Older entries come from hourly prices, so their times are to the hour.</div>
   <div>Trump '24 is the 2024 presidential margin (R+ or D+, rounded): statewide for Senate and governor, by district for the House. Districts in redrawn states use the new lines where recalculated results exist (Utah, Florida, TX-28) and are blank otherwise. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
   <div>Odds update about every 15 seconds.</div>
+  <div id="checkBox" hidden><button class="btn" id="checkBtn">Copy check report</button> <span id="checkMsg"></span><textarea id="checkOut" readonly style="width:100%;height:90px;margin-top:6px;font:11px ui-monospace,monospace;background:var(--surface2);color:var(--fg);border:1px solid var(--line);border-radius:6px"></textarea></div>
 </footer>
 
 <script src="core.js"></script>
@@ -676,6 +677,24 @@ function feedTime(t,t0){
   const tm=x=>new Date(x).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}).replace(":00","").replace(" ","").toLowerCase();
   const day=today?"":d.toLocaleDateString([], {weekday:"short"})+" ";
   return t0&&t-t0>=50*60e3?day+tm(t0)+"–"+tm(t):day+tm(t);
+}
+// Check report (open the page with ?check): the feed next to an independent source, Kalshi's own
+// price from 24 hours ago, plus what this device's history shows, so the feed can be verified.
+function checkReport(){
+  const now=Date.now(),day=now-24*3600e3;
+  const all=[...races.values()];
+  const best=new Map();for(const r of all){if(r.type.startsWith("ctl")&&!/-2026$/.test(r.id))continue;const b=best.get(r.key||r.type);if(!b||r.vol24>b.vol24)best.set(r.key||r.type,r)}
+  const list=[...best.values()];
+  const f=buildFeed(list);
+  const r3=v=>v==null?null:Math.round(v*1000)/1000,tm=t=>new Date(t).toISOString().slice(5,16);
+  return{v:"check1",at:new Date(now).toISOString(),lastLook:compareFrom?new Date(compareFrom).toISOString():null,live:f.live,
+    filling:bf.running,feed:f.items.map(e=>({t:tm(e.t),t0:e.t0?tm(e.t0):null,id:e.id,text:e.html.replace(/<[^>]+>/g,"")})),
+    races:list.filter(r=>r.d!=null).map(r=>{
+      const h=(history[r.id]||[]).filter(p=>p[0]>=day);
+      let lo=null,hi=null;for(const p of h){if(!lo||p[1]<lo[1])lo=p;if(!hi||p[1]>hi[1])hi=p}
+      return{id:r.id,l:feedLabel(r),now:r3(r.d),k24:r3(r.d24),vol:Math.round(r.vol24),thin:r.thin,multi:!!r.multi,
+        n:h.length,first:h[0]?[tm(h[0][0]),r3(h[0][1])]:null,lo:lo?[tm(lo[0]),r3(lo[1])]:null,hi:hi?[tm(hi[0]),r3(hi[1])]:null};
+    })};
 }
 function renderFeed(list){
   const f=buildFeed(list);
@@ -1190,6 +1209,15 @@ $("typeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.type=v;setP
 setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);
 $("auto").setAttribute("aria-pressed",ui.auto);$("compet").setAttribute("aria-pressed",ui.compet);
 if(ui.auto)keepAwake(true);
+if(/[?&]check\b/.test(location.search)){
+  $("checkBox").hidden=false;
+  $("checkBtn").onclick=async()=>{
+    const txt=JSON.stringify(checkReport());$("checkOut").value=txt;
+    try{await navigator.clipboard.writeText(txt);$("checkMsg").textContent="Copied "+Math.round(txt.length/1024)+" KB. Paste it to Claude."}
+    catch(e){$("checkOut").select();$("checkMsg").textContent="Select all in the box and copy."}
+    if(bf.running)$("checkMsg").textContent+=" (Trends were still filling in; wait and copy again.)";
+  };
+}
 paintSaved();
 refresh();
 </script>

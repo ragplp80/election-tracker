@@ -235,3 +235,20 @@ test("House rows show their district's 2024 result and holder; Missouri and Virg
   assert.equal(cells("KXHOUSENC11-26")[5], "–", "no recalculated result for North Carolina yet");
   noErrors(pg);
 });
+
+test("?check adds a report of the feed next to Kalshi's 24-hour-ago prices", async (t) => {
+  const board = defaultBoard();
+  board.candles = (tk) => (tk.endsWith("-D") ? 0.6 : 0.4);
+  const pg = loadPageAt(t, "https://tracker.test/?check", { board });
+  await loaded(pg);
+  await waitFor(() => !pg.d.getElementById("checkBox").hidden, { what: "check box" });
+  pg.d.getElementById("checkBtn").click();
+  await waitFor(() => pg.d.getElementById("checkOut").value.length > 100, { what: "report" });
+  const rep = JSON.parse(pg.d.getElementById("checkOut").value);
+  assert.equal(rep.v, "check1");
+  const tx = rep.races.find((r) => r.id === "SENATETX-26");
+  assert.ok(tx && typeof tx.now === "number" && typeof tx.k24 === "number");
+  assert.ok(Array.isArray(rep.feed));
+  noErrors(pg);
+});
+function loadPageAt(t, url, opts) { const pg = loadPage({ ...opts, url }); t.after(() => pg.close()); return pg; }
