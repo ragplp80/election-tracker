@@ -36,7 +36,7 @@ test("keeps only 2026 events (Kentucky governor 2027 is out)", () => {
 
 test("one key per race, so duplicate series collapse", () => {
   assert.equal(Core.seriesKey(Core.classify("SENATEAK")), Core.seriesKey(Core.classify("KXSENATEAK")));
-  assert.notEqual(Core.seriesKey(Core.classify("SENATEOH")), Core.seriesKey(Core.classify("SENATEOHS")));
+  assert.equal(Core.seatKey(Core.classify("SENATEOH")), Core.seatKey(Core.classify("SENATEOHS")), "Ohio has one Senate seat up (the special)");
 });
 
 test("slimming keeps only the fields the page uses", () => {
@@ -70,4 +70,16 @@ test("a multi-district series is read district by district", () => {
   assert.equal(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-XX03-26" }), null, "unknown state");
   assert.ok(Core.is2026(meta, { event_ticker: "KXHOUSERACE-NC03-26" }));
   assert.equal(Core.seriesKey(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-PA07-26" })), Core.seriesKey(Core.classify("HOUSEPA7")), "same race as the dedicated series");
+});
+
+test("the 2026 seat list: 435 House, 35 Senate, 36 governors, and what counts as a seat", () => {
+  assert.equal(Object.values(Core.SEATS2026.house).reduce((a, b) => a + b, 0), 435);
+  assert.equal(Core.SEATS2026.senate.length, 35);
+  assert.equal(Core.SEATS2026.gov.length, 36);
+  assert.ok(Core.isSeat({ type: "house", st: "PA", dist: 17 }));
+  assert.ok(!Core.isSeat({ type: "house", st: "PA", dist: 18 }), "no PA-18");
+  assert.ok(Core.isSeat({ type: "house", st: "AK", dist: 0 }), "at large");
+  assert.ok(!Core.isSeat({ type: "house", st: "AK", dist: 1 }));
+  assert.ok(!Core.isSeat({ type: "senate", st: "CA" }), "no California Senate race in 2026");
+  assert.ok(!Core.isSeat({ type: "gov", st: "KY" }), "Kentucky governor is 2027");
 });

@@ -62,28 +62,35 @@ async function buildCatalog() {
   const critical = failed.filter((t) => { const c = Core.classify(t); return c && c.type !== "house"; });
   if (critical.length || failed.length > cands.length * 0.03)
     throw new Error(`catalog incomplete: ${failed.length} lookups failed (${failed.slice(0, 8).join(", ")})`);
-  // A multi-district series becomes one entry per district
-  const entries = [];
-  for (const c of checked) {
-    if (!c || c.error || !c.events.length) continue;
-    if (c.type !== "houseMulti") { entries.push(c); continue; }
-    for (const ev of c.events) { const m = Core.eventMeta(c, ev); if (m) entries.push({ ...m, events: [ev] }); }
-  }
+  // Every open 2026 event is a candidate for a seat. For each seat keep the busiest one: the most
+  // contracts traded wins, whichever series it's in. Events that don't match a seat are ignored.
   const best = new Map();
-  for (const c of entries) {
-    const key = Core.seriesKey(c), prev = best.get(key);
-    if (!prev || (c.pref || 0) > (prev.pref || 0)) best.set(key, c);
+  for (const c of checked) {
+    if (!c || c.error) continue;
+    for (const ev of c.events) {
+      const m = Core.eventMeta(c, ev);
+      if (!m || !Core.isSeat(m)) continue;
+      const key = Core.seatKey(m), vol = Core.eventVolume(ev), prev = best.get(key);
+      if (!prev || vol > prev.vol || (vol === prev.vol && (m.pref || 0) > (prev.meta.pref || 0))) best.set(key, { meta: m, ev, vol });
+    }
   }
   let seats = null;
   const races = [];
-  for (const c of best.values()) {
+  for (const { meta: c, ev } of best.values()) {
     const meta = { series: c.series, type: c.type, st: c.st, dist: c.dist, special: c.special, ...(c.multi ? { multi: true } : {}) };
-    if (c.type === "seats") { seats = Core.slimEvent(c.events[0]); continue; }
-    races.push({ meta, events: c.events.map(Core.slimEvent) });
+    if (c.type === "seats") { seats = Core.slimEvent(ev); continue; }
+    races.push({ meta, events: [Core.slimEvent(ev)] });
   }
-  const count = (t) => races.filter((r) => r.meta.type === t).length;
-  const coverage = { senate: count("senate"), gov: count("gov"), house: count("house"), untracked };
-  return { at: Date.now(), races, seats, failed: failed.length, missed: failed, coverage };
+  return { at: Date.now(), races, seats, failed: failed.length, missed: failed, coverage: coverageOf(races, untracked) };
+}
+
+// Which seats have a market, and which don't (shown in the ?check report and on the House card)
+function coverageOf(races, untracked) {
+  const have = new Set(races.map((r) => Core.seatKey(r.meta)));
+  const S = Core.SEATS2026, houseKeys = [];
+  for (const [st, n] of Object.entries(S.house)) for (let d = n === 1 ? 0 : 1; d <= (n === 1 ? 0 : n); d++) houseKeys.push(`${st}-${d}`);
+  const part = (keys, prefix) => { const missing = keys.filter((k) => !have.has(`${prefix}-${k}`)); return { up: keys.length, withMarket: keys.length - missing.length, missing }; };
+  return { senate: part(S.senate, "senate"), gov: part(S.gov, "gov"), house: part(houseKeys, "house"), untracked };
 }
 
 // Fresh prices for a catalog: a few batched calls by ticker; if a batch comes back short,
@@ -113,7 +120,7 @@ async function refreshPrices(cat) {
   const swept = await pool(cat.races, 8, async (r) => {
     const e = await read(r.meta.series);
     const mine = new Set(r.events.map((ev) => ev.event_ticker));
-    const evs = (e.events || []).filter((ev) => Core.is2026(r.meta, ev) && (!r.meta.multi || mine.has(ev.event_ticker)));
+    const evs = (e.events || []).filter((ev) => mine.has(ev.event_ticker));   // the seat's own event only
     return { meta: r.meta, events: evs.map(Core.slimEvent) };
   });
   let seats = cat.seats;
@@ -125,4 +132,4 @@ async function refreshPrices(cat) {
   return { mode: "sweep", races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats };
 }
 
-module.exports = { kget, pool, buildCatalog, refreshPrices, KALSHI };
+module.exports = { kget, pool, buildCatalog, refreshPrices, coverageOf, KALSHI };

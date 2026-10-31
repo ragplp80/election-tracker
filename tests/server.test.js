@@ -132,7 +132,7 @@ test("catalog: person markets fill in only when a race has no party market", asy
     assert.ok(series.includes("KXGOVCA"), "no party market for California governor: person market used");
     assert.ok(series.includes("SENATEMI") && !series.includes("KXMISENATE"), "party market wins in Michigan");
     assert.ok(cat.coverage.untracked.some(([t]) => t === "KXSENATERACE"), "unrecognized race series reported");
-    assert.ok(cat.coverage.senate >= 5 && cat.coverage.house >= 3);
+    assert.ok(cat.coverage.senate.withMarket >= 5 && cat.coverage.house.withMarket >= 3);
   } finally { restore(); }
 });
 
@@ -156,5 +156,30 @@ test("multi-district series: each district becomes a race; a dedicated series st
     assert.equal(log.filter((l) => l.includes("series_ticker=KXHOUSERACE")).length, 1, "read once");
     const nc2 = fresh.races.find((r) => r.meta.st === "NC" && r.meta.dist === 3);
     assert.deepEqual(nc2.events.map((e) => e.event_ticker), ["KXHOUSERACE-NC03-26"]);
+  } finally { restore(); }
+});
+
+test("seat-first: busiest market wins, non-seats are ignored, missing seats are listed", async () => {
+  const H = require("./helpers.js");
+  const board = defaultBoard();
+  // Two markets for Texas Senate: the dedicated series is quiet, a person market is busy
+  board.events.SENATETX = [H.twoParty("SENATETX-26", "James Talarico", "Ken Paxton", 0.68, { vol24: 100 })];
+  board.events.SENATETX[0].markets.forEach((m) => (m.volume_fp = "5000"));
+  board.events.KXTXSENATE = [{ event_ticker: "KXTXSENATE-26", markets: [H.market("KXTXSENATE-26-JT", "James Talarico", 0.67), H.market("KXTXSENATE-26-KP", "Ken Paxton", 0.33)] }];
+  board.events.SENATECA = [H.twoParty("SENATECA-26", "D", "R", 0.9)];          // not up in 2026
+  board.events.HOUSEPA18 = [H.twoParty("HOUSEPA18-26", "D", "R", 0.5)];        // no such district
+  const restore = useFakeKalshi(board, []);
+  try {
+    const cat = await lib.buildCatalog();
+    assert.equal(cat.races.find((r) => r.meta.type === "senate" && r.meta.st === "TX").meta.series, "KXTXSENATE", "most contracts traded wins");
+    assert.ok(!cat.races.some((r) => r.meta.series === "SENATECA"), "no California Senate seat");
+    assert.ok(!cat.races.some((r) => r.meta.series === "HOUSEPA18"), "no PA-18");
+    assert.equal(cat.races.filter((r) => r.meta.type === "senate" && r.meta.st === "AK").length, 1, "one race per seat");
+    assert.equal(cat.races.find((r) => r.meta.st === "AK" && r.meta.type === "senate").events[0].event_ticker, "SENATEAK-26", "busier Alaska event");
+    const cov = cat.coverage;
+    assert.equal(cov.house.up, 435);
+    assert.ok(cov.house.missing.includes("PA-1") && !cov.house.missing.includes("PA-7"));
+    assert.equal(cov.senate.up, 35);
+    assert.ok(cov.senate.missing.includes("IL"));
   } finally { restore(); }
 });

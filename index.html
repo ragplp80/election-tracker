@@ -386,7 +386,7 @@ footer a{color:var(--muted)}
 <script>
 "use strict";
 // ---------- Reference data ----------
-const {STATES,classify,is2026,seriesKey,eventMeta}=Core;
+const {STATES,classify,is2026,seatKey,isSeat,eventMeta}=Core;
 // 2024 presidential margin by state, Trump minus Harris, percentage points (rounded).
 const TRUMP24={AL:30.5,AK:13.1,AZ:5.5,AR:30.6,CA:-20.1,CO:-11.0,CT:-14.5,DE:-14.7,FL:13.1,GA:2.2,HI:-23.1,ID:36.5,IL:-10.9,IN:19.0,IA:13.2,KS:16.1,KY:30.5,LA:22.0,ME:-6.9,MD:-28.5,MA:-25.2,MI:1.4,MN:-4.2,MS:22.9,MO:18.4,MT:19.9,NE:20.4,NV:3.1,NH:-2.8,NJ:-5.9,NM:-6.0,NY:-12.6,NC:3.2,ND:36.5,OH:11.2,OK:34.3,OR:-14.3,PA:1.7,RI:-13.8,SC:17.8,SD:29.2,TN:29.7,TX:13.7,UT:21.6,VT:-32.3,VA:-5.8,WA:-18.2,WV:41.9,WI:0.9,WY:45.8};
 // When most of each state's polls close, Eastern time on election night (hours after midnight; 24+ = next day).
@@ -451,7 +451,7 @@ async function discover(onProgress){
   const cached=store.get("et.series2",null);
   if(cached&&clockNow()-cached.at<6*3600e3&&cached.list.length)return cached.list;
   const j=await kget("/series?category=Elections");
-  const cands=(j.series||[]).map(s=>({series:s.ticker,...classify(s.ticker)})).filter(s=>s.type&&s.type!=="seats");
+  const cands=(j.series||[]).map(s=>({series:s.ticker,...classify(s.ticker)})).filter(s=>s.type&&s.type!=="seats"&&isSeat(s));
   // Keep only series that have an open event. Prefer the party-style series when a race has two.
   const look=async c=>{const e=await kget(`/events?series_ticker=${c.series}&status=open`);return{...c,open:(e.events||[]).length}};
   const checked=await pool(cands,4,look,onProgress);
@@ -463,7 +463,7 @@ async function discover(onProgress){
   const best=new Map();
   for(const c of checked){
     if(!c||c.error||!c.open)continue;
-    const key=seriesKey(c);
+    const key=seatKey(c);
     const prev=best.get(key);
     if(!prev||c.pref>prev.pref)best.set(key,c);
   }
@@ -516,7 +516,7 @@ function buildRace(meta,ev){
   else if(meta.type==="house"){label=st+"-"+(meta.dist?meta.dist:"AL");sub="House"+(meta.special?" special":"")}
   else{label=meta.type==="ctlS"?"Senate control":"House control";sub=""}
   return{id:ev.event_ticker,type:meta.type,st,dist:meta.dist,label,sub,outs,multi,
-    key:meta.type==="senate"?`senate-${st}`:`${meta.type}-${st??""}-${meta.dist??""}-${meta.special?"s":""}`,series:meta.series,
+    key:seatKey(meta),series:meta.series,
     leader:outs[0],d,d24,vol24:outs.reduce((s,o)=>s+o.vol24,0),
     trump:(meta.type==="senate"||meta.type==="gov")?TRUMP24[st]??null:meta.type==="house"?HOUSE2024.pres[st+"-"+(meta.dist||0)]??null:null,
     polls:POLLS[st]??null,
@@ -724,7 +724,7 @@ function renderBalance(list,ctlH){
       <div class="range" title="Middle 80% of outcomes"><i style="left:${w(st.p10)}%;width:${w(st.p90-st.p10)}%"></i></div>
       <div class="barscale num"><span>D</span><span>218 to win</span><span>R</span></div>
       <div class="balnote num">Most likely: <b>${D} Democratic seats</b> · range ${Math.round(st.p10)}–${Math.round(st.p90)} · ${fmtPct(st.pMaj)} chance of 218+${ctlH?` (control market: ${fmtPct(ctlH.d)})`:""}</div>
-      <div class="balnote num">Districts with markets (${dist.length}): <b class="up">D-favored ${cnt.D.safe+cnt.D.lik+cnt.D.lean}</b>, toss-ups <b>${cnt.D.toss+cnt.R.toss}</b>, <b class="down">R-favored ${cnt.R.safe+cnt.R.lik+cnt.R.lean}</b> · Pickups where the holder is known: <b class="up">D +${pickD}</b> / <b class="down">R +${pickR}</b></div>`;
+      <div class="balnote num">Markets on <b>${dist.length} of 435</b> House seats: <b class="up">D-favored ${cnt.D.safe+cnt.D.lik+cnt.D.lean}</b>, toss-ups <b>${cnt.D.toss+cnt.R.toss}</b>, <b class="down">R-favored ${cnt.R.safe+cnt.R.lik+cnt.R.lean}</b> · Pickups where the holder is known: <b class="up">D +${pickD}</b> / <b class="down">R +${pickR}</b></div>`;
   }
 }
 // "+1 today" style badges: seats gained since the daily baseline, by party.
@@ -1089,7 +1089,7 @@ let lastMode="";
 async function fullSweep(prog){
   const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true&status=open`);return{meta,events:j.events||[]}},prog);
   const out=[];let errs=0;
-  for(const x of res){if(!x||x.error){errs++;continue}for(const ev of x.events){const meta=eventMeta(x.meta,ev);if(meta)out.push({meta,ev})}}
+  for(const x of res){if(!x||x.error){errs++;continue}for(const ev of x.events){const meta=eventMeta(x.meta,ev);if(meta&&isSeat(meta))out.push({meta,ev})}}
   return{out,errs};
 }
 // One call for everything: the server keeps a shared copy, refreshed about every 15 seconds.
