@@ -274,3 +274,36 @@ test("trend lines are scaled to their own range and colored by direction", async
   assert.equal(ga.getAttribute("stroke"), "var(--dem)");
   assert.equal(line("SENATETX-26").getAttribute("stroke"), "var(--muted)", "flat race stays gray");
 });
+
+test("daily baseline: seats and odds compared with midnight Eastern", async (t) => {
+  // Midnight ET today, computed the same way the page does
+  const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const [y, m, d] = etDate.split("-").map(Number);
+  let mid = Date.UTC(y, m - 1, d, 4);
+  const h = +new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hourCycle: "h23" }).format(new Date(mid));
+  if (h === 23) mid += 3600e3;
+  const now = Date.now(), hist = {};
+  for (let x = mid - 24 * 3600e3; x <= now; x += 5 * 60e3) (hist["SENATEME-26"] ||= []).push([x, x <= mid ? 0.45 : 0.55]);
+  const board = defaultBoard();
+  // House seat market: at midnight every bucket's odds sat one bucket (4 seats) lower
+  const seatEv = board.events.KXDHOUSESEATS[0].markets;
+  const nowP = seatEv.map((m) => +m.last_price_dollars);
+  board.candles = (tk, ts) => {
+    const mm = tk.match(/^KXDHOUSESEATS-27-(\d+)$/);
+    if (!mm) return null;
+    const i = +mm[1];
+    return ts * 1000 <= mid ? (nowP[i + 1] ?? 0.01) : nowP[i];
+  };
+  const pg = page(t, { board, storage: { "et.history": hist } });
+  await loaded(pg);
+  if (pg.w.eval("baseAt()") !== mid) return; // election night: baseline is 6pm, covered elsewhere
+  assert.match(pg.text("#baseline"), /since 12am ET/);
+  assert.match(pg.text("#balS .baltally"), /D \+1 today/, "Maine moved to the Democrat since midnight");
+  assert.match(pg.text("#balS"), /Changed hands today: Maine → Graham Platner/);
+  assert.match(pg.row("SENATEME-26").textContent, /Lead change/);
+  assert.equal(pg.row("SENATEME-26").querySelectorAll(".c")[2].textContent.trim(), "D +10");
+  await waitFor(() => /today/.test(pg.text("#balH .baltally")), { what: "House baseline", timeout: 10000 });
+  assert.match(pg.text("#balH .baltally"), /D \+[3-5] today/);
+  assert.match(pg.text("#flipLine"), /Senate D \+\d+ \/ R \+\d+ \(D \+1 today\)/);
+  noErrors(pg);
+});

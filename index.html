@@ -177,6 +177,10 @@ footer a{color:var(--muted)}
 .feedempty{font-size:13px;color:var(--muted);padding:4px 0}
 @media (max-width:560px){.fe{grid-template-columns:70px 12px 1fr;font-size:13px}}
 
+.today{font-size:13px;font-weight:700;align-self:center;border:1px solid var(--line);border-radius:6px;padding:3px 8px;white-space:nowrap}
+.today em{font-style:normal;color:var(--muted);font-weight:600}
+.today.sm{font-size:12px;padding:1px 6px;margin-left:4px}
+
 /* Race detail sheet */
 .row[data-id],.ctl[data-id]{cursor:pointer}
 .row[data-id]:hover{background:var(--surface2)}
@@ -241,9 +245,9 @@ footer a{color:var(--muted)}
   <div class="ctl" id="tonight">
     <h2>Tonight</h2>
     <div class="tonight">
-      <div class="tile"><b id="nUpset" class="num">–</b><span>Upsets vs. going in</span></div>
+      <div class="tile"><b id="nUpset" class="num">–</b><span>Lead changes today</span></div>
       <div class="tile"><b id="nMove" class="num">–</b><span id="nMoveLab">Big moves</span></div>
-      <div class="tile"><b id="nCall" class="num">–</b><span>Crossed 90% tonight</span></div>
+      <div class="tile"><b id="nCall" class="num">–</b><span>Crossed 90% today</span></div>
     </div>
     <div class="flipline" id="flipLine"></div>
     <div class="next" id="nextClose"></div>
@@ -290,14 +294,14 @@ footer a{color:var(--muted)}
 
 <div class="table" id="table">
   <div class="row head">
-    <div>Race</div><div>Held</div><div>Odds now</div><div class="rt">Last</div><div class="rt" id="winHead">1h</div><div class="rt">Going in</div><div class="rt">24 h</div><div class="rt">24h vol</div><div class="rt">Trump '24</div><div class="rt">Polls</div><div class="rt" id="trendHead">Trend · flags</div>
+    <div>Race</div><div>Held</div><div>Odds now</div><div class="rt">Last</div><div class="rt" id="winHead">1h</div><div class="rt" id="todayHead">Today</div><div class="rt">24 h</div><div class="rt">24h vol</div><div class="rt">Trump '24</div><div class="rt">Polls</div><div class="rt" id="trendHead">Trend · flags</div>
   </div>
   <div class="empty" id="loading">Loading every Senate, governor and House race. The first load takes about 30 seconds.</div>
 </div>
 
 <footer>
   <div>"Move over" sets the window for the move column, the Movers sort and the big-move count. "Since last look" compares with the last time this device had the page open (more than 30 minutes ago). When the page hasn't been open long enough, it looks up the missing history. Big move = 5+ points in 15m or 1h, 8+ points over longer windows.</div>
-  <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability and labeled by who gained: <span class="up">D +2</span> means 2 points toward the Democrat, <span class="down">R +2</span> toward the Republican. "Last" is since the previous refresh. "Going in" compares with the odds captured at the start of the night (tap the time at the top to reset it).</div>
+  <div>In three-way races with a strong independent (like Nebraska), moves are in points of the chance the Republican loses. Elsewhere, moves are in points of Democratic win probability and labeled by who gained: <span class="up">D +2</span> means 2 points toward the Democrat, <span class="down">R +2</span> toward the Republican. "Last" is since the previous refresh. "Today" compares with the odds at midnight Eastern (on election day, from 6pm ET, with the odds at 6pm), the same moment for everyone.</div>
   <div>Held is the party holding the seat before this election. "D pickup" or "R pickup" means the current favorite would flip the seat. House holders are left off ("new map") in states that use new district lines in 2026: Texas, California, North Carolina, Ohio, Utah, Florida, Tennessee, Louisiana and Alabama.</div>
   <div>Balance of power: each Senate race is counted for its current favorite. Safe = favorite 90%+, likely 75–90%, lean 60–75%, toss-up under 60%. Seats not up this year: 34 Democratic (including King and Sanders, who caucus with Democrats) and 31 Republican. Democrats need 51 for control; Republicans need 50 because Vice President Vance breaks ties. The House has markets on only about 100 of 435 districts, so its seat count comes from the market on how many seats Democrats will win: the expected number, with the range covering the middle 80% of outcomes.</div>
   <div>What changed lists lead changes, races crossing 75% or 90%, and big moves, built from price history. Before election night a big move is 5+ points within 4 hours; on election night (from 5pm ET) it is 4+ points within 15 minutes. "New" marks anything since your last look. Older entries come from hourly prices, so their times are to the hour.</div>
@@ -445,7 +449,26 @@ function buildRace(meta,ev){
 let series=[],races=new Map(),prevSnap=new Map(),busy=false,lastOk=null,errCount=0;
 let houseSeats=null; // {buckets:[{lo,hi,mid,p,label}], vol}
 let history=store.get("et.history",{});           // id -> [[t, value]]
-let goingIn=store.get("et.goingIn",null);         // {date, at, races:{id:{party,name,p,d}}}
+// Daily baseline: each race's odds at midnight Eastern, read from price history, so it is the same
+// moment for everyone no matter when the page was opened. On election night it moves to 6pm ET.
+function etTs(dateStr,hour){
+  const [y,m,d]=dateStr.split("-").map(Number);let t=Date.UTC(y,m-1,d,hour+4);
+  const h=+new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",hourCycle:"h23"}).format(new Date(t));
+  let diff=hour-h;if(diff>12)diff-=24;if(diff<-12)diff+=24;return t+diff*3600e3;
+}
+function baseAt(){
+  const d=etDate(),h=etHour();
+  if((d===ELECTION_DAY&&h>=18)||(d==="2026-11-04"&&h<8))return etTs(ELECTION_DAY,18);
+  return etTs(d,0);
+}
+const baseLabel=()=>baseAt()===etTs(ELECTION_DAY,18)?"6pm":"12am";
+// Which side leads for a tracked value v (Democratic share, or chance the Republican loses).
+function sideOf(r,v){return v>=0.5?(r.multi?(r.outs.find(o=>o.party!=="R")?.party==="I"?"I":"D"):"D"):"R"}
+function baseFor(r){
+  if(r.d==null)return null;
+  const v=pointAt(r.id,baseAt(),75);
+  return v==null?null:{v,party:sideOf(r,v),p:Math.max(v,1-v)};
+}
 const ui=store.get("et.ui",{sort:"key",type:"all",compet:false,auto:false});
 if(!ui.win)ui.win="1h";
 // "Since last look": the last time this device had the page open, at least 30 minutes ago.
@@ -494,8 +517,8 @@ function winMove(r,v){
 function metrics(r){
   const v=val(r),prev=prevSnap.get(r.id);
   r.dLast=prev!=null?v-prev:null;
-  const gi=goingIn?.races?.[r.id];
-  r.dIn=gi&&gi.d!=null&&r.d!=null?r.d-gi.d:(gi&&r.d==null?r.leader.p-gi.p:null);
+  const gi=baseFor(r);r.base=gi;
+  r.dIn=gi?v-gi.v:null;
   r.d24h=r.d!=null&&r.d24!=null?r.d-r.d24:null;
   r.dWin=winMove(r,v);
   r.thin=r.vol24<2000;
@@ -507,11 +530,10 @@ function metrics(r){
   // Flags
   r.flags=[];
   if(gi){
-    const favNow=r.outs.find(o=>o.party===gi.party&&gi.party!=="X")||r.outs.find(o=>o.name===gi.name);
-    r.upsetLoss=favNow?gi.p-favNow.p:0;
-    const leaderChanged=gi.party!=="X"?r.leader.party!==gi.party:r.leader.name!==gi.name;
-    if(leaderChanged&&r.leader.p>=0.5)r.flags.push({k:"upset",t:"Upset",cls:r.leader.party==="D"?"upset dfav":"upset"});
-    if(gi.p<0.9&&r.leader.p>=0.9)r.flags.push({k:"call",t:"90%+ now",cls:"call"});
+    const nowSide=sideOf(r,v),pNow=Math.max(v,1-v);
+    r.upsetLoss=gi.p-(nowSide===gi.party?pNow:1-pNow);               // how far today's starting favorite has slipped
+    if(nowSide!==gi.party&&Math.abs(v-0.5)>=0.02)r.flags.push({k:"upset",t:"Lead change",cls:nowSide==="R"?"upset":"upset dfav"});
+    if(gi.p<0.9&&pNow>=0.9)r.flags.push({k:"call",t:"90%+ now",cls:"call"});
   } else r.upsetLoss=0;
   const prevLeader=prevSnap.get(r.id+":leader");
   if(prevLeader&&prevLeader!==(r.leader.party+r.leader.name))r.flags.push({k:"flip",t:"Lead flip",cls:"flip"});
@@ -538,7 +560,7 @@ function parseSeatMarket(j){
     else if(num(m.floor_strike)!=null||num(m.cap_strike)!=null){lo=num(m.floor_strike)??num(m.cap_strike)-3;hi=num(m.cap_strike)??lo+3}
     const p=priceOf(m);
     if(lo==null||p==null)continue;
-    buckets.push({lo,hi,mid:(lo+hi)/2,p,label:lab});
+    buckets.push({lo,hi,mid:(lo+hi)/2,p,label:lab,ticker:m.ticker});
   }
   if(buckets.length<3)return null;
   buckets.sort((a,b)=>a.mid-b.mid);
@@ -558,15 +580,19 @@ function renderBalance(all){
   const byState=new Map(sen.map(r=>[r.st,r]));
   const segs={dsafe:0,dlik:0,dlean:0,dtoss:0,ind:0,rtoss:0,rlean:0,rlik:0,rsafe:0};
   const fav={D:SEN_NOT_UP.D,R:SEN_NOT_UP.R,I:0};let expD=SEN_NOT_UP.D,noMarket=[];
+  const fav0={D:SEN_NOT_UP.D,R:SEN_NOT_UP.R,I:0};let expD0=SEN_NOT_UP.D;const changed=[];   // at today's baseline
   const tosses=[];
   for(const st of Object.keys(HELD_SEN)){
     const r=byState.get(st);
-    if(!r){const h=HELD_SEN[st];segs[h==="D"?"dsafe":"rsafe"]++;fav[h]++;if(h==="D")expD++;noMarket.push(st);continue}
+    if(!r){const h=HELD_SEN[st];segs[h==="D"?"dsafe":"rsafe"]++;fav[h]++;fav0[h]++;if(h==="D"){expD++;expD0++}noMarket.push(st);continue}
     const L=r.leader,party=L.party==="D"||L.party==="R"?L.party:"I",b=band(L.p);
     fav[party]++;
     if(party==="I")segs.ind++;else segs[(party==="D"?"d":"r")+b]++;
     const dShare=r.outs.find(o=>o.party==="D");const tot=r.outs.reduce((s,o)=>s+o.p,0)||1;
     expD+=dShare?dShare.p/tot:0;
+    const p0=r.base?(r.base.party==="D"||r.base.party==="R"?r.base.party:"I"):party;fav0[p0]++;
+    expD0+=r.base&&!r.multi?r.base.v:(dShare?dShare.p/tot:0);
+    if(p0!==party)changed.push(r);
     if(b==="toss"||party==="I")tosses.push(r);
   }
   const order=[["dnot",SEN_NOT_UP.D],["dsafe",segs.dsafe],["dlik",segs.dlik],["dlean",segs.dlean],["dtoss",segs.dtoss],["ind",segs.ind],["rtoss",segs.rtoss],["rlean",segs.rlean],["rlik",segs.rlik],["rsafe",segs.rsafe],["rnot",SEN_NOT_UP.R]];
@@ -574,11 +600,12 @@ function renderBalance(all){
   const net=fav.D-47;
   tosses.sort((a,b)=>a.leader.p-b.leader.p);
   $("balS").innerHTML=`<div class="balhead"><h2>Senate if the odds are right</h2><span class="balnote"><b>${ctl}</b></span></div>
-    <div class="baltally num"><b class="d">${fav.D}<small>DEM</small></b><b class="r">${fav.R}<small>REP</small></b>${fav.I?`<b class="i">${fav.I}<small>IND</small></b>`:""}</div>
+    <div class="baltally num"><b class="d">${fav.D}<small>DEM</small></b><b class="r">${fav.R}<small>REP</small></b>${fav.I?`<b class="i">${fav.I}<small>IND</small></b>`:""}${seatDelta(fav.D-fav0.D,fav.R-fav0.R,fav.I-fav0.I)}</div>
     <div class="barwrap"><div class="seatbar" role="img" aria-label="Senate: ${fav.D} Democratic, ${fav.R} Republican${fav.I?", "+fav.I+" independent":""}">${order.filter(x=>x[1]>0).map(([k,n])=>`<i class="seg-${k}" style="width:${n}%" title="${n}"></i>`).join("")}</div><div class="majline" style="left:50%"></div></div>
     <div class="barscale num"><span>D</span><span>50 + VP · 51</span><span>R</span></div>
     <div class="ballegend">${legend([["dnot","Not up"],["dsafe","Safe 90%+"],["dlik","Likely 75%+"],["dlean","Lean 60%+"],["dtoss","Toss-up"]],"D")}${fav.I||segs.ind?legend([["ind","Independent"]]):""}</div>
-    <div class="balnote num">Net change: <b class="${net>=0?"up":"down"}">${net>=0?"D +"+net:"R +"+(-net)}</b> · Expected Democratic seats (weighted by odds): <b>${expD.toFixed(1)}</b>${noMarket.length?` · No market: ${noMarket.join(", ")} (counted for current party)`:""}</div>
+    ${changed.length?`<div class="balnote">Changed hands today: ${changed.map(r=>`<b class="${r.leader.party==="D"?"up":r.leader.party==="R"?"down":"ind"}">${esc(r.label)} → ${esc(r.leader.name)}</b>`).join(", ")}</div>`:""}
+    <div class="balnote num">Net change: <b class="${net>=0?"up":"down"}">${net>=0?"D +"+net:"R +"+(-net)}</b> · Expected Democratic seats (weighted by odds): <b>${expD.toFixed(1)}</b> ${expDelta(expD-expD0)}${noMarket.length?` · No market: ${noMarket.join(", ")} (counted for current party)`:""}</div>
     ${tosses.length?`<div class="tosses"><span class="lab">Toss-ups</span>${tosses.map(r=>{const c=r.leader.party==="D"?"d":r.leader.party==="R"?"r":"i";return`<button class="tchip" data-open="${esc(r.id)}">${esc(r.st)} <span class="${c}">${r.leader.party==="X"?"":r.leader.party+" "}${fmtPct(r.leader.p)}</span></button>`}).join("")}</div>`:""}`;
 
   // ----- House
@@ -593,13 +620,23 @@ function renderBalance(all){
   } else {
     const D=Math.round(st.median),R=435-D,w=n=>(n/435*100).toFixed(2);
     $("balH").innerHTML=`<div class="balhead"><h2>House if the odds are right</h2><span class="balnote"><b>${D>=218?"Democrats win control":"Republicans keep control"}</b></span></div>
-      <div class="baltally num"><b class="d">${D}<small>DEM</small></b><b class="r">${R}<small>REP</small></b></div>
+      <div class="baltally num"><b class="d">${D}<small>DEM</small></b><b class="r">${R}<small>REP</small></b>${houseBase?seatDelta(D-Math.round(houseBase.median),Math.round(houseBase.median)-D,0):""}</div>
       <div class="barwrap"><div class="seatbar" role="img" aria-label="House: about ${D} Democratic, ${R} Republican"><i class="seg-dsafe" style="width:${w(D)}%"></i><i class="seg-rsafe" style="width:${w(R)}%"></i></div><div class="majline" style="left:${w(217.5)}%"></div></div>
       <div class="range" title="Middle 80% of outcomes"><i style="left:${w(st.p10)}%;width:${w(st.p90-st.p10)}%"></i></div>
       <div class="barscale num"><span>D</span><span>218 to win</span><span>R</span></div>
       <div class="balnote num">Most likely: <b>${D} Democratic seats</b> · range ${Math.round(st.p10)}–${Math.round(st.p90)} · ${fmtPct(st.pMaj)} chance of 218+${ctlH?` (control market: ${fmtPct(ctlH.d)})`:""}</div>
       <div class="balnote num">Districts with markets (${dist.length}): <b class="up">D-favored ${cnt.D.safe+cnt.D.lik+cnt.D.lean}</b>, toss-ups <b>${cnt.D.toss+cnt.R.toss}</b>, <b class="down">R-favored ${cnt.R.safe+cnt.R.lik+cnt.R.lean}</b> · Pickups where the holder is known: <b class="up">D +${pickD}</b> / <b class="down">R +${pickR}</b></div>`;
   }
+}
+// "+1 today" style badges: seats gained since the daily baseline, by party.
+function seatDelta(d,r,i){
+  const parts=[];
+  if(d>0)parts.push(`<span class="up">D +${d}</span>`);if(r>0)parts.push(`<span class="down">R +${r}</span>`);if(i>0)parts.push(`<span class="ind">I +${i}</span>`);
+  return`<span class="today">${parts.length?parts.join(" "):"No change"} <em>today</em></span>`;
+}
+function expDelta(x){
+  if(Math.abs(x)<0.05)return`<span class="today sm">no change today</span>`;
+  return`<span class="today sm"><span class="${x>0?"up":"down"}">${x>0?"D":"R"} +${Math.abs(x).toFixed(1)}</span> <em>today</em></span>`;
 }
 function legend(items,party){
   // Each key shows the Democratic and Republican shade side by side
@@ -763,7 +800,7 @@ function renderControl(elId,title,r){
   el.innerHTML=`<h2>${title}</h2>
     <div class="ctlnums"><div class="big d num">${fmtPct(r.d)}<small>DEM</small></div><div class="big r num">${fmtPct(1-r.d)}<small>REP</small></div></div>
     <div class="splitbar"><i class="d" style="width:${r.d*100}%"></i><i class="r" style="width:${(1-r.d)*100}%"></i></div>
-    <div class="ctlfoot num"><span>${esc(winLabel(true))} ${fmtPts(r.dWin,r)} · Going in ${fmtPts(r.dIn,r)} · 24h ${fmtPts(r.d24h,r)}</span></div>
+    <div class="ctlfoot num"><span>${esc(winLabel(true))} ${fmtPts(r.dWin,r)} · Today ${fmtPts(r.dIn,r)} · 24h ${fmtPts(r.d24h,r)}</span></div>
     <div class="spark ctlspark">${spark(r,{w:300,h:40})}</div>`;
 }
 function render(){
@@ -785,9 +822,11 @@ function render(){
   $("winLastBtn").textContent=winLabel(false,"last");
   $("nCall").textContent=list.filter(r=>r.flags.some(f=>f.k==="call")).length;
   // Seats that change hands if every current favorite wins
-  const flipCount=t=>{const rs=list.filter(r=>r.type===t);return{D:rs.filter(r=>r.pickup==="D").length,R:rs.filter(r=>r.pickup==="R").length,I:rs.filter(r=>r.pickup==="I").length}};
+  const pick0=r=>r.base&&(r.held==="D"||r.held==="R")&&r.base.party!==r.held?r.base.party:r.base?null:r.pickup;   // pickup at today's baseline
+  const flipCount=t=>{const rs=list.filter(r=>r.type===t);const c=(f,p)=>rs.filter(r=>f(r)===p).length;
+    const net=x=>c(x,"D")-c(x,"R");return{D:c(r=>r.pickup,"D"),R:c(r=>r.pickup,"R"),I:c(r=>r.pickup,"I"),today:net(r=>r.pickup)-net(pick0)}};
   const fs=flipCount("senate"),fg=flipCount("gov"),fh=flipCount("house");
-  const fmtF=(lab,f)=>`${lab} <b class="D">D +${f.D}</b> / <b class="R">R +${f.R}</b>${f.I?` / <b style="color:var(--ind)">I +${f.I}</b>`:""}`;
+  const fmtF=(lab,f)=>`${lab} <b class="D">D +${f.D}</b> / <b class="R">R +${f.R}</b>${f.I?` / <b style="color:var(--ind)">I +${f.I}</b>`:""}${f.today?` <span class="${f.today>0?"D":"R"}">(${f.today>0?"D":"R"} +${Math.abs(f.today)} today)</span>`:""}`;
   $("flipLine").innerHTML=`If favorites win: ${fmtF("Senate",fs)} · ${fmtF("Gov",fg)} · ${fmtF("House*",fh)}`;
   $("flipLine").title="House counts only districts with known holders";
   // Next poll closing
@@ -820,7 +859,7 @@ function render(){
       <div class="c num mute">${fmtVol(r.vol24)}</div>
       <div class="c num mute">${fmtMargin(r.trump)}</div>
       <div class="c num mute">${fmtClock(r.polls)}</div>
-      <div class="mobilemoves num">${r.held&&r.held!=="new"?`<span>Held ${r.held}</span>`:""}<span>Last ${fmtPts(r.dLast,r)}</span><span>${esc(winLabel(true))} ${fmtPts(r.dWin,r)}</span><span>In ${fmtPts(r.dIn,r)}</span><span>Vol ${fmtVol(r.vol24)}</span>${r.trump!=null?`<span>Trump '24 ${fmtMargin(r.trump)}</span>`:""}</div>
+      <div class="mobilemoves num">${r.held&&r.held!=="new"?`<span>Held ${r.held}</span>`:""}<span>Last ${fmtPts(r.dLast,r)}</span><span>${esc(winLabel(true))} ${fmtPts(r.dWin,r)}</span><span>Today ${fmtPts(r.dIn,r)}</span><span>Vol ${fmtVol(r.vol24)}</span>${r.trump!=null?`<span>Trump '24 ${fmtMargin(r.trump)}</span>`:""}</div>
       <div class="spark-flags" style="display:grid;gap:3px;min-width:0"><div class="flags">${r.flags.map(f=>`<span class="chip ${f.cls}">${f.t}</span>`).join("")}</div><div class="spark">${spark(r)}</div></div>
     </div>`}).join("");
   const head=$("table").querySelector(".row.head").outerHTML;
@@ -834,25 +873,10 @@ function renderStatus(){
   if(errCount)s+=` · <span class="err">${errCount} race${errCount>1?"s":""} didn't load</span>`;
   if(ui.auto&&nextAt)s+=` · next in <b class="num" id="cd">${Math.max(0,Math.round((nextAt-Date.now())/1000))}s</b>`;
   $("updated").innerHTML=s;
-  $("baseline").innerHTML=goingIn?`Going in: <button id="resetBase" style="border:0;background:none;padding:0;color:var(--fg);font-weight:600;text-decoration:underline dotted">${new Date(goingIn.at).toLocaleString([], {weekday:"short",hour:"numeric",minute:"2-digit"})}</button>`:"";
-  const b=$("resetBase");if(b)b.onclick=()=>{captureBaseline(true)};
+  $("baseline").innerHTML=`Today: since <b>${baseLabel()} ET</b>`;
 }
 
 // ---------- Refresh cycle ----------
-function captureBaseline(force){
-  if(!force&&goingIn&&goingIn.date===etDate())return;
-  if(force){ if(!askConfirm())return; }
-  const rs={};for(const r of races.values())rs[r.id]={party:r.leader.party,name:r.leader.name,p:r.leader.p,d:r.d};
-  goingIn={date:etDate(),at:Date.now(),races:rs};store.set("et.goingIn",goingIn);
-  for(const r of races.values())metrics(r);render();renderStatus();
-}
-let confirmTimer=null;
-function askConfirm(){ // two-tap confirm, since dialogs are blocked in some viewers
-  const b=$("resetBase");if(!b)return true;
-  if(b.dataset.armed){delete b.dataset.armed;return true}
-  b.dataset.armed="1";b.textContent="Tap again to reset to now";clearTimeout(confirmTimer);
-  confirmTimer=setTimeout(renderStatus,4000);return false;
-}
 // Fast path: after one full sweep we know every market ticker, so later refreshes ask Kalshi
 // for all of them in a few batched calls. A full per-race sweep still runs every 10th refresh
 // (to catch new markets) and whenever a batch comes back incomplete.
@@ -944,7 +968,6 @@ async function refresh(){
     lastOk=new Date();lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
     saveSnapshot(result.out,lastMode==="snapshot"?result.seats:null);
     store.set("et.lastSeen",now);
-    if(!goingIn||goingIn.date!==etDate())captureBaseline(false);
     for(const r of races.values())metrics(r);
     render();
     if(detail){renderDetailMeta();if(detail.range==="1h"||detail.range==="6h")loadDetail()}
@@ -995,13 +1018,13 @@ function needsMinute(r,now){
 }
 // Earliest time the hourly lookup should reach: 6 hours back, or back to "since last look".
 function hourlyFrom(now){
-  let t=now-25*3600e3;
+  let t=Math.min(now-25*3600e3,baseAt()-2*3600e3);
   if(compareFrom&&now-compareFrom<=72*3600e3)t=Math.min(t,compareFrom-3600e3);
   return t;
 }
 function needsHourly(r,now){
   const f=fetched.get(r.id);if(f?.hourlyAt>now-30*60e3&&f.hourlyFrom<=hourlyFrom(now)+3600e3)return false;
-  if(pointAt(r.id,now-6*3600e3,75)==null||pointAt(r.id,now-24*3600e3,75)==null)return true;
+  if(pointAt(r.id,now-6*3600e3,75)==null||pointAt(r.id,now-24*3600e3,75)==null||pointAt(r.id,baseAt(),75)==null)return true;
   if(compareFrom&&now-compareFrom>BF_HOURS*3600e3&&now-compareFrom<=72*3600e3&&pointAt(r.id,compareFrom,75)==null)return true;
   return false;
 }
@@ -1040,8 +1063,26 @@ function mergePoints(id,pts,now){
   const merged=have.concat(pts.filter(p=>!have.some(q=>Math.abs(q[0]-p[0])<45e3))).sort((a,b)=>a[0]-b[0]);
   history[id]=compactHistory(merged,now);
 }
+let houseBase=null; // {at, median, mean}
+async function loadHouseBase(){
+  const at=baseAt();
+  if(!houseSeats||houseBase?.at===at||at>Date.now())return;
+  const s0=Math.floor(at/3600e3)*3600-3*3600,e0=Math.floor(at/3600e3)*3600+3600;
+  try{
+    const ps=await Promise.all(houseSeats.buckets.map(async b=>{
+      if(!b.ticker)return b.p;
+      const j=await kget(`/series/KXDHOUSESEATS/markets/${b.ticker}/candlesticks?start_ts=${s0}&end_ts=${e0}&period_interval=60`);
+      const cs=(j.candlesticks||[]).map(c=>[c.end_period_ts*1000,candleValue(c),num(c.price?.previous_dollars)]).filter(c=>c[1]!=null);
+      const before=cs.filter(c=>c[0]<=at).pop();
+      return before?before[1]:cs.length?(cs[0][2]??cs[0][1]):b.p;   // no trades around midnight: unchanged
+    }));
+    const st=seatStats({buckets:houseSeats.buckets.map((b,i)=>({...b,p:ps[i]}))});
+    if(st)houseBase={at,median:st.median,mean:st.mean};
+  }catch(e){}
+}
 async function backfill(){
   bf.started=true;
+  loadHouseBase().then(()=>{if(houseBase)render()});
   const now=Date.now();
   const jobs=[...races.values()].filter(eligible).map(r=>({r,minute:needsMinute(r,now),hourly:needsHourly(r,now)})).filter(j=>j.minute||j.hourly);
   if(!jobs.length)return;
