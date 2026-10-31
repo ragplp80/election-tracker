@@ -95,3 +95,24 @@ test("relay: passes allowed read-only paths, refuses others", withBoard(defaultB
   const bad = await callHandler(relay, { path: "/portfolio/balance" });
   assert.equal(bad.statusCode, 404);
 }));
+
+test("catalog: a lookup Kalshi refuses at first is retried, so Texas isn't dropped", async () => {
+  const board = defaultBoard();
+  let refusals = 0;
+  board.fail = (p, u) => p === "/events" && u.searchParams.get("series_ticker") === "SENATETX" && refusals++ < 5;
+  board.failStatus = 429;
+  const restore = useFakeKalshi(board, []);
+  try {
+    const cat = await lib.buildCatalog();
+    assert.ok(cat.races.some((r) => r.meta.series === "SENATETX"), "Texas present after retry");
+    assert.equal(cat.failed, 0);
+  } finally { restore(); }
+});
+
+test("catalog: never publishes a list missing a Senate race", async () => {
+  const board = defaultBoard();
+  board.fail = (p, u) => p === "/events" && u.searchParams.get("series_ticker") === "SENATETX";
+  board.failStatus = 429;
+  const restore = useFakeKalshi(board, []);
+  try { await assert.rejects(lib.buildCatalog(), /incomplete.*SENATETX/); } finally { restore(); }
+});

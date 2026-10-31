@@ -360,12 +360,18 @@ async function pool(items,n,fn,onProgress){
 // ---------- Discovering the races ----------
 // Kalshi series naming (from the connection test): SENATETX, GOVPARTYAZ, HOUSEPA7, CONTROLS/CONTROLH.
 async function discover(onProgress){
-  const cached=store.get("et.series",null);
+  const cached=store.get("et.series2",null);
   if(cached&&Date.now()-cached.at<6*3600e3&&cached.list.length)return cached.list;
   const j=await kget("/series?category=Elections");
   const cands=(j.series||[]).map(s=>({series:s.ticker,...classify(s.ticker)})).filter(s=>s.type&&s.type!=="seats");
   // Keep only series that have an open event. Prefer the party-style series when a race has two.
-  const checked=await pool(cands,4,async c=>{const e=await kget(`/events?series_ticker=${c.series}&status=open`);return{...c,open:(e.events||[]).length}},onProgress);
+  const look=async c=>{const e=await kget(`/events?series_ticker=${c.series}&status=open`);return{...c,open:(e.events||[]).length}};
+  const checked=await pool(cands,4,look,onProgress);
+  for(let pass=0;pass<2;pass++){   // retry anything Kalshi pushed back on
+    const redo=checked.map((c,i)=>c&&c.error?i:-1).filter(i=>i>=0);if(!redo.length)break;
+    await sleep(1500);const again=await pool(redo.map(i=>cands[i]),2,look);redo.forEach((i,k)=>{checked[i]=again[k]});
+  }
+  const incomplete=checked.some(c=>c&&c.error);
   const best=new Map();
   for(const c of checked){
     if(!c||c.error||!c.open)continue;
@@ -374,7 +380,7 @@ async function discover(onProgress){
     if(!prev||c.pref>prev.pref)best.set(key,c);
   }
   const list=[...best.values()].map(({series,type,st,dist,special})=>({series,type,st,dist,special}));
-  store.set("et.series",{at:Date.now(),list});
+  if(!incomplete)store.set("et.series2",{at:Date.now(),list});   // don't remember a list with gaps
   return list;
 }
 
@@ -833,7 +839,7 @@ async function batchSweep(prog){
 // If it fails, the page falls back to asking for each race itself (the code above).
 let snapFailedAt=0,savedFrom=null;
 async function snapshotSweep(){
-  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),30000);
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),55000);
   try{
     const r=await fetch("/api/snapshot",{signal:ctl.signal,headers:{accept:"application/json"}});
     if(!r.ok)throw new Error("HTTP "+r.status);

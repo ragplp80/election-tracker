@@ -41,12 +41,25 @@ async function buildCatalog() {
   const j = await kget("/series?category=Elections");
   const cands = (j.series || []).map((s) => ({ series: s.ticker, ...Core.classify(s.ticker) })).filter((c) => c.type);
   if (!cands.some((c) => c.type === "seats")) cands.push({ series: "KXDHOUSESEATS", type: "seats" });
-  const checked = await pool(cands, 8, async (c) => {
+  const look = async (c) => {
     const e = await kget(`/events?series_ticker=${c.series}&status=open&with_nested_markets=true`);
     return { ...c, events: (e.events || []).filter((ev) => Core.is2026(c, ev)) };
-  });
-  const failed = checked.filter((c) => c && c.error).length;
-  if (failed > cands.length * 0.2) throw new Error(`catalog incomplete: ${failed} of ${cands.length} lookups failed`);
+  };
+  const checked = await pool(cands, 5, look);
+  // Kalshi sometimes pushes back on a burst of requests. Retry those slowly before giving up.
+  for (let pass = 0; pass < 2; pass++) {
+    const redo = checked.map((c, i) => (c && c.error ? i : -1)).filter((i) => i >= 0);
+    if (!redo.length) break;
+    await sleep(1500);
+    const again = await pool(redo.map((i) => cands[i]), 2, look);
+    redo.forEach((i, k) => { checked[i] = again[k]; });
+  }
+  // Never publish a list that is missing a Senate, governor or control race: a short list would
+  // stay cached and make races (and the seat counts built from them) vanish. Keep the last good one.
+  const failed = cands.filter((c, i) => checked[i] && checked[i].error).map((c) => c.series);
+  const critical = failed.filter((t) => { const c = Core.classify(t); return c && c.type !== "house"; });
+  if (critical.length || failed.length > cands.length * 0.03)
+    throw new Error(`catalog incomplete: ${failed.length} lookups failed (${failed.slice(0, 8).join(", ")})`);
   const best = new Map();
   for (const c of checked) {
     if (!c || c.error || !c.events.length) continue;
@@ -60,7 +73,7 @@ async function buildCatalog() {
     if (c.type === "seats") { seats = Core.slimEvent(c.events[0]); continue; }
     races.push({ meta, events: c.events.map(Core.slimEvent) });
   }
-  return { at: Date.now(), races, seats, failed };
+  return { at: Date.now(), races, seats, failed: failed.length, missed: failed };
 }
 
 // Fresh prices for a catalog: a few batched calls by ticker; if a batch comes back short,
