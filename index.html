@@ -181,6 +181,40 @@ footer a{color:var(--muted)}
 .today em{font-style:normal;color:var(--muted);font-weight:600}
 .today.sm{font-size:12px;padding:1px 6px;margin-left:4px}
 
+/* Map */
+.mapcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 14px;display:grid;gap:10px}
+.maphead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.maphead h2{margin:0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.maphead .crumb{font-size:15px;font-weight:800;font-variation-settings:"wdth" 85}
+.mapback{border:1px solid var(--line);background:var(--surface2);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:700}
+.mapwrap{position:relative}
+.mapwrap svg{display:block;width:100%;height:auto;max-height:70vh}
+.mapwrap path{cursor:pointer;transition:fill .2s}
+.mapwrap path.st-line{fill:none;stroke:var(--surface);stroke-width:.8;pointer-events:none}
+.mapwrap path.d-line{stroke:var(--surface);stroke-width:.35}
+.mapwrap path:hover{stroke:var(--fg);stroke-width:1}
+.mapwrap text{pointer-events:none;fill:var(--fg);font-weight:700;paint-order:stroke;stroke:var(--surface);stroke-width:2px;stroke-linejoin:round}
+.mf-dsafe{fill:var(--dem)} .mf-dlik{fill:color-mix(in srgb,var(--dem) 72%,var(--surface))} .mf-dlean{fill:color-mix(in srgb,var(--dem) 45%,var(--surface))} .mf-dtoss{fill:color-mix(in srgb,var(--dem) 22%,var(--surface2))}
+.mf-rsafe{fill:var(--rep)} .mf-rlik{fill:color-mix(in srgb,var(--rep) 72%,var(--surface))} .mf-rlean{fill:color-mix(in srgb,var(--rep) 45%,var(--surface))} .mf-rtoss{fill:color-mix(in srgb,var(--rep) 22%,var(--surface2))}
+.mf-ind{fill:var(--ind)} .mf-none{fill:color-mix(in srgb,var(--faint) 35%,var(--surface))} .mf-notup{fill:var(--surface2)} .mf-new{fill:url(#mapHatch)}
+.mapinfo{font-size:13px;color:var(--muted);min-height:18px} .mapinfo b{color:var(--fg)}
+.maplegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--muted)}
+.maplegend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.maplegend svg{width:12px;height:12px;border-radius:2px}
+.hatchsw{display:inline-block;width:12px;height:12px;border-radius:2px;border:1px solid var(--line);background:repeating-linear-gradient(45deg,var(--faint) 0 1.5px,var(--surface2) 1.5px 4px)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:6px}
+.tile2{border:1px solid var(--line);border-radius:6px;padding:8px 4px;text-align:center;font-weight:800;font-size:14px;cursor:pointer;color:var(--fg)}
+.tile2 small{display:block;font-size:10.5px;font-weight:700;opacity:.85}
+.tile2.t-dsafe,.tile2.t-rsafe,.tile2.t-ind{color:#fff}
+.t-dsafe{background:var(--dem)} .t-dlik{background:color-mix(in srgb,var(--dem) 72%,var(--surface))} .t-dlean{background:color-mix(in srgb,var(--dem) 45%,var(--surface))} .t-dtoss{background:color-mix(in srgb,var(--dem) 22%,var(--surface2))}
+.t-rsafe{background:var(--rep)} .t-rlik{background:color-mix(in srgb,var(--rep) 72%,var(--surface))} .t-rlean{background:color-mix(in srgb,var(--rep) 45%,var(--surface))} .t-rtoss{background:color-mix(in srgb,var(--rep) 22%,var(--surface2))}
+.t-ind{background:var(--ind)} .t-none{background:color-mix(in srgb,var(--faint) 35%,var(--surface));color:var(--muted)}
+.mapraces{display:grid;gap:0}
+.mr{display:grid;grid-template-columns:minmax(90px,1fr) 2fr auto;gap:10px;align-items:center;padding:7px 2px;border-top:1px solid var(--line);font-size:13px;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;width:100%}
+.mr:first-child{border-top:0}
+.mr b{font-weight:700}
+.mr .mrnone{color:var(--faint)}
+
 /* Race news in the detail sheet */
 .newshead{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .newshead h4{margin:0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
@@ -271,6 +305,23 @@ footer a{color:var(--muted)}
   <div class="bal" id="balH"><div class="balhead"><h2>House if the odds are right</h2></div><div class="balnote">Loading…</div></div>
 </section>
 
+<section class="mapcard" id="mapCard">
+  <div class="maphead">
+    <h2>Map</h2>
+    <div class="seg" id="mapMode">
+      <button data-v="senate" aria-pressed="false">Senate</button>
+      <button data-v="gov" aria-pressed="false">Governor</button>
+      <button data-v="house" aria-pressed="true">House</button>
+    </div>
+    <button class="mapback" id="mapBack" hidden>← All states</button>
+    <span class="crumb" id="mapCrumb"></span>
+  </div>
+  <div class="mapwrap" id="mapWrap"><div class="empty" style="padding:30px">Loading map…</div></div>
+  <div class="mapinfo" id="mapInfo">Tap a state to see its races and House districts.</div>
+  <div class="maplegend" id="mapLegend"></div>
+  <div class="mapraces" id="mapRaces" hidden></div>
+</section>
+
 <section class="feed" id="feed" aria-live="polite">
   <div class="feedhead"><h2>What changed</h2><span id="feedSub">Loading…</span></div>
   <div class="feedlist" id="feedList"></div>
@@ -319,6 +370,7 @@ footer a{color:var(--muted)}
   <div>What changed lists lead changes, races crossing 75% or 90%, and big moves, built from price history. Before election night a big move is 5+ points within 4 hours; on election night (from 5pm ET) it is 4+ points within 15 minutes. "New" marks anything since your last look. Older entries come from hourly prices, so their times are to the hour.</div>
   <div>Trump '24 is the 2024 presidential margin (R+ or D+, rounded): statewide for Senate and governor, by district for the House. Districts in redrawn states use the new lines where recalculated results exist (Utah, Florida, TX-28) and are blank otherwise. Poll close is when most of the state closes, Eastern time. Thin = under 2,000 contracts traded in 24 hours, so moves there can be noise.</div>
   <div>Trend lines show the current leader's chance over the "Move over" window: rising means the favorite is pulling ahead, falling means the race is tightening. The color shows who gained.</div>
+  <div>Map: colored by the current favorite and how safe they are (same shades as the Senate bar); gray means no betting market for that race. District lines are the 2024 lines, except Texas (new 2026 lines). Georgia and New York show their 2022 lines, which differ slightly from 2024. California, North Carolina, Ohio, Utah, Florida, Tennessee, Louisiana and Alabama have new 2026 lines that aren't mapped here, so their districts appear as numbered tiles.</div>
   <div>Latest news in each race's chart comes from Google News searches for the candidates, from the past three days; amber ticks on the chart mark when each headline was published. Switch it off in any race's chart.</div>
   <div>Odds update about every 15 seconds.</div>
   <div id="checkBox" hidden><button class="btn" id="checkBtn">Copy check report</button> <span id="checkMsg"></span><textarea id="checkOut" readonly style="width:100%;height:90px;margin-top:6px;font:11px ui-monospace,monospace;background:var(--surface2);color:var(--fg);border:1px solid var(--line);border-radius:6px"></textarea></div>
@@ -790,6 +842,111 @@ function renderFeed(list){
   const mb=$("feedMore");if(mb)mb.onclick=e=>{e.stopPropagation();ui.feedAll=!ui.feedAll;saveUi();renderFeed(list)};
 }
 
+// ---------- Map: Senate, governor and House by state, with a drill-in per state ----------
+let mapData=null,mapLoading=false,mapBuilt="";            // mapBuilt: which view the SVG currently shows
+const mapView={mode:ui.mapMode||"house",st:null};
+function leanClass(r){
+  if(!r)return"none";
+  const v=val(r);
+  const party=r.d!=null?sideOf(r,v):(r.leader.party==="D"||r.leader.party==="R"?r.leader.party:"I");
+  if(party==="I")return"ind";
+  const p=r.d!=null?Math.max(v,1-v):r.leader.p;
+  return(party==="D"?"d":"r")+band(p);
+}
+function mapRaceLookup(list){
+  const sen=new Map(),gov=new Map(),house=new Map();
+  for(const r of list){if(r.type==="senate")sen.set(r.st,r);else if(r.type==="gov")gov.set(r.st,r);else if(r.type==="house")house.set(`${r.st}-${r.dist||0}`,r)}
+  return{sen,gov,house};
+}
+// Fill class for a state (Senate/governor) or district (House) in the current view
+function stateFill(st,look){
+  if(mapView.mode==="senate")return HELD_SEN[st]?leanClass(look.sen.get(st)):"notup";
+  if(mapView.mode==="gov")return HELD_GOV[st]?leanClass(look.gov.get(st)):"notup";
+  return mapData.tiles[st]?"new":"none";
+}
+async function loadMap(){
+  if(mapData||mapLoading)return;mapLoading=true;
+  try{const r=await fetch("map2026.json");if(!r.ok)throw new Error("HTTP "+r.status);mapData=await r.json();render()}
+  catch(e){$("mapWrap").innerHTML='<div class="empty">Couldn\'t load the map.</div>'}
+  finally{mapLoading=false}
+}
+function buildMapSvg(){
+  const M=mapData,st=mapView.st,house=mapView.mode==="house";
+  const hatch='<defs><pattern id="mapHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--surface2)"/><line x1="0" y1="0" x2="0" y2="5" stroke="var(--faint)" stroke-width="1.6"/></pattern></defs>';
+  if(!st){
+    let body="";
+    if(house){
+      // Base layer: every state, so water inside a state's outline (Lake Michigan by Chicago) isn't a hole
+      for(const [k,v] of Object.entries(M.states))body+=M.tiles[k]?`<path class="mf-new" data-st="${k}" d="${v.d}"/>`:`<path class="mf-notup" style="pointer-events:none" d="${v.d}"/>`;
+      for(const [k,v] of Object.entries(M.districts))body+=`<path class="d-line" data-key="${k}" data-st="${k.split("-")[0]}" d="${v.d}"/>`;
+    }else for(const [k,v] of Object.entries(M.states))body+=`<path data-st="${k}" d="${v.d}"/>`;
+    for(const v of Object.values(M.states))body+=`<path class="st-line" d="${v.d}"/>`;
+    $("mapWrap").innerHTML=`<svg viewBox="0 0 ${M.w} ${M.h}" role="img" aria-label="Map of the United States">${hatch}${body}</svg>`;
+    return;
+  }
+  const S=M.states[st];
+  if(house&&M.tiles[st]){$("mapWrap").innerHTML=`<div class="tiles" id="mapTiles">${Array.from({length:M.tiles[st]},(_,i)=>`<button class="tile2" data-key="${st}-${i+1}">${i+1}<small></small></button>`).join("")}</div>`;return}
+  const [x0,y0,x1,y1]=S.b,pad=Math.max(x1-x0,y1-y0)*0.06,w=x1-x0+2*pad,h=y1-y0+2*pad,fs=Math.max(w,h)/34;
+  let body="";
+  if(house){
+    const keys=Object.keys(M.districts).filter(k=>k.startsWith(st+"-"));
+    for(const k of keys)body+=`<path class="d-line" data-key="${k}" d="${M.districts[k].d}" style="stroke-width:${(w/400).toFixed(3)}"/>`;
+    if(keys.length>1)for(const k of keys){const c=M.districts[k].c;body+=`<text x="${c[0]}" y="${c[1]}" font-size="${fs.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" style="stroke-width:${(fs/6).toFixed(2)}px">${k.split("-")[1]}</text>`}
+  }else body+=`<path data-st="${st}" d="${S.d}"/>`;
+  body+=`<path class="st-line" d="${S.d}" style="stroke:var(--fg);stroke-width:${(w/300).toFixed(3)};stroke-opacity:.5"/>`;
+  $("mapWrap").innerHTML=`<svg viewBox="${(x0-pad).toFixed(1)} ${(y0-pad).toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" role="img" aria-label="Map of ${esc(S.n)}">${hatch}${body}</svg>`;
+}
+function renderMap(list){
+  if(!mapData){loadMap();return}
+  const view=`${mapView.mode}|${mapView.st||""}`;
+  if(view!==mapBuilt){buildMapSvg();mapBuilt=view}
+  const look=mapRaceLookup(list),M=mapData,st=mapView.st;
+  // Paint fills
+  for(const el of $("mapWrap").querySelectorAll("[data-key]")){
+    const r=look.house.get(el.dataset.key),cls=leanClass(r);
+    if(el.tagName==="path")el.setAttribute("class","d-line mf-"+cls);
+    else{el.className="tile2 t-"+cls;el.querySelector("small").textContent=r?fmtPct(r.d!=null?Math.max(val(r),1-val(r)):r.leader.p):"no mkt"}
+  }
+  for(const el of $("mapWrap").querySelectorAll("path[data-st]:not([data-key])"))el.setAttribute("class","mf-"+stateFill(el.dataset.st,look));
+  // Header, legend, and the drilled state's race list
+  $("mapBack").hidden=!st;
+  $("mapCrumb").textContent=st?M.states[st].n:"";
+  const notes=[];
+  if(st&&mapView.mode==="house"){
+    if(M.tiles[st])notes.push("New 2026 district lines, not mapped yet: one tile per district.");
+    else if(st==="TX")notes.push("New 2026 district lines.");
+    else if(M.approx.includes(st))notes.push("Lines shown are from 2022; some districts changed slightly for 2024.");
+  }
+  if(!st&&!$("mapInfo").dataset.hover)$("mapInfo").innerHTML=notes.join(" ")||"Tap a state to see its races and House districts.";
+  else if(st&&!$("mapInfo").dataset.hover)$("mapInfo").innerHTML=notes.join(" ")||"Tap a district to open its chart.";
+  const sw=c=>`<svg viewBox="0 0 12 12"><rect width="12" height="12" class="mf-${c}"/></svg>`;
+  const pair=(c,l)=>`<span>${sw("d"+c)}${sw("r"+c)}${l}</span>`;
+  $("mapLegend").innerHTML=pair("safe","Safe 90%+")+pair("lik","Likely 75%+")+pair("lean","Lean 60%+")+pair("toss","Toss-up")+`<span>${sw("ind")}Independent</span><span>${sw("none")}No market</span>`
+    +(mapView.mode==="house"?`<span><i class="hatchsw"></i>New lines, shown as tiles</span>`:`<span>${sw("notup")}Not up in 2026</span>`);
+  const box=$("mapRaces");
+  if(!st){box.hidden=true;return}
+  const rows=[];
+  const add=(label,r)=>rows.push(r?`<button class="mr" data-open="${esc(r.id)}"><b>${esc(label)}</b><span>${oddsCell(r)}</span><span class="num">${fmtPts(r.dIn,r)}</span></button>`
+    :`<div class="mr"><b>${esc(label)}</b><span class="mrnone">No betting market</span><span></span></div>`);
+  if(HELD_SEN[st])add("Senate",look.sen.get(st));
+  if(HELD_GOV[st])add("Governor",look.gov.get(st));
+  const n=M.tiles[st]||Object.keys(M.districts).filter(k=>k.startsWith(st+"-")&&!k.endsWith("-0")).length;
+  if(M.districts[st+"-0"])add("House (at large)",look.house.get(st+"-0"));
+  for(let i=1;i<=n;i++)if(look.house.get(`${st}-${i}`))add(`${st}-${i}`,look.house.get(`${st}-${i}`));
+  const nomkt=n-[...Array(n).keys()].filter(i=>look.house.get(`${st}-${i+1}`)).length;
+  box.innerHTML=rows.join("")+(nomkt>0?`<div class="mr"><b>Other districts</b><span class="mrnone">${nomkt} district${nomkt>1?"s":""} without a betting market</span><span></span></div>`:"");
+  box.hidden=false;
+}
+function mapDescribe(key,stKey){
+  const look=mapRaceLookup(pickRaces().list);
+  if(key){const r=look.house.get(key);return`<b>${esc(key.replace(/-0$/,"-AL"))}</b> · ${r?`${esc(r.leader.name)} ${fmtPct(r.leader.p)}${r.held&&r.held!=="new"?` · held ${r.held}`:""}`:"no betting market"}`}
+  const name=mapData.states[stKey]?.n||stKey;
+  const r=mapView.mode==="senate"?look.sen.get(stKey):mapView.mode==="gov"?look.gov.get(stKey):null;
+  if(mapView.mode==="house")return`<b>${esc(name)}</b> · tap to see its districts`;
+  const up=mapView.mode==="senate"?HELD_SEN[stKey]:HELD_GOV[stKey];
+  return`<b>${esc(name)}</b> · ${!up?"no race this year":r?`${esc(r.leader.name)} ${fmtPct(r.leader.p)}`:"no betting market"}`;
+}
+
 // ---------- Rendering ----------
 // Compact trend line for the "Move over" window. It plots the current leader's chance, so rising
 // means the favorite is pulling ahead and falling means the race is tightening. Color says who
@@ -851,6 +1008,7 @@ function render(){
   renderControl("ctlS","Senate control",ctlS);renderControl("ctlH","House control",ctlH);
   renderBalance(list,ctlH);
   renderFeed([ctlS,ctlH,...list].filter(Boolean));
+  renderMap(list);
   $("nUpset").textContent=list.filter(r=>r.flags.some(f=>f.k==="leadToday")).length;
   $("nMove").textContent=list.filter(r=>r.flags.some(f=>f.k==="move")).length;
   $("nMoveLab").textContent="Big moves ("+winLabel(true).toLowerCase()+")";
@@ -1311,6 +1469,22 @@ function setPressed(seg,v){for(const b of $(seg).querySelectorAll("button"))b.se
 function saveUi(){store.set("et.ui",ui)}
 $("refresh").onclick=refresh;
 $("feed").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
+$("mapMode").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;mapView.mode=v;ui.mapMode=v;saveUi();setPressed("mapMode",v);render()};
+$("mapBack").onclick=()=>{mapView.st=null;delete $("mapInfo").dataset.hover;render()};
+$("mapWrap").addEventListener("click",e=>{
+  const el=e.target.closest("[data-key],[data-st]");if(!el||!mapData)return;
+  if(!mapView.st){mapView.st=el.dataset.st;delete $("mapInfo").dataset.hover;render();$("mapCard").scrollIntoView({block:"nearest"});return}
+  const key=el.dataset.key;
+  if(key){const r=mapRaceLookup(pickRaces().list).house.get(key);if(r)openDetail(r.id);else $("mapInfo").innerHTML=mapDescribe(key)}
+  else{const look=mapRaceLookup(pickRaces().list),r=mapView.mode==="senate"?look.sen.get(el.dataset.st):look.gov.get(el.dataset.st);if(r)openDetail(r.id)}
+});
+$("mapWrap").addEventListener("pointerover",e=>{
+  if(e.pointerType==="touch")return;
+  const el=e.target.closest("[data-key],[data-st]");if(!el||!mapData)return;
+  $("mapInfo").dataset.hover="1";$("mapInfo").innerHTML=mapDescribe(el.dataset.key,el.dataset.st);
+});
+$("mapWrap").addEventListener("pointerleave",()=>{delete $("mapInfo").dataset.hover;if(mapData)render()});
+$("mapRaces").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("balance").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openDetail(b.dataset.open)});
 $("table").addEventListener("click",e=>{const row=e.target.closest(".row[data-id]");if(row)openDetail(row.dataset.id)});
 for(const id of ["ctlS","ctlH"])$(id).addEventListener("click",()=>{const d=$(id).dataset.id;if(d)openDetail(d)});
@@ -1322,7 +1496,7 @@ $("winSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.win=v;setPre
   if(!busy&&races.size&&!bf.running)backfill()};
 $("sortSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.sort=v;setPressed("sortSeg",v);saveUi();render()};
 $("typeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.type=v;setPressed("typeSeg",v);saveUi();render()};
-setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);
+setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);setPressed("mapMode",mapView.mode);
 $("auto").setAttribute("aria-pressed",ui.auto);$("compet").setAttribute("aria-pressed",ui.compet);
 if(ui.auto)keepAwake(true);
 if(/[?&]check\b/.test(location.search)){

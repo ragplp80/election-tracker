@@ -145,6 +145,7 @@ function loadPage(opts = {}) {
       const r = await callHandler(snapshotHandler);
       return resp(r.statusCode, r.body);
     }
+    if (/^\/?map2026\.json$/.test(u)) return { ok: true, status: 200, headers: { get: () => null }, json: async () => JSON.parse(fs.readFileSync(path.join(ROOT, "map2026.json"), "utf8")) };
     if (u.startsWith("/api/news?")) {
       const r = await callHandler(require(path.join(ROOT, "api/news.js")), Object.fromEntries(new URL("http://x" + u).searchParams));
       return resp(r.statusCode, r.body);
