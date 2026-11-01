@@ -1,0 +1,7 @@
+{
+  "name": "election-tracker",
+  "private": true,
+  "dependencies": {
+    "@vercel/functions": "3.9.11"
+  }
+}

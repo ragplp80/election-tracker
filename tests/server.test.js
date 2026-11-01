@@ -105,6 +105,24 @@ test("catalog endpoint: cached for an hour, refreshed in the background", withBo
   assert.match(res.headers["cache-control"], /stale-while-revalidate/);
 }));
 
+test("race list: kept between requests, and an hour-old copy is served while it rebuilds", async () => {
+  const board = defaultBoard();
+  const log = [];
+  const restore = useFakeKalshi(board, log);
+  try {
+    const a = await lib.getCatalog();
+    const n = log.length;
+    const b = await lib.getCatalog();
+    assert.equal(b, a, "second request uses the kept copy");
+    assert.equal(log.length, n, "no Kalshi calls");
+    a.at -= 2 * 3600e3;                                     // pretend it is two hours old
+    const c = await lib.getCatalog();
+    assert.equal(c, a, "old copy served right away");
+    await new Promise((r) => setTimeout(r, 300));
+    assert.ok(log.length > n, "rebuild started in the background");
+  } finally { restore(); }
+});
+
 test("relay: passes allowed read-only paths, refuses others", withBoard(defaultBoard(), async () => {
   const relay = require("../api/kalshi.js");
   const ok = await callHandler(relay, { path: "/events?series_ticker=SENATETX&with_nested_markets=true" });

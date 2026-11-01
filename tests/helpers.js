@@ -96,6 +96,7 @@ function fakeKalshi(board, log = []) {
 
 // Point Node's global fetch (used by the server functions) at the fake Kalshi.
 function useFakeKalshi(board, log) {
+  require("../api/_lib.js").resetCatalogCache();   // each test starts with no kept race list
   const handle = fakeKalshi(board, log);
   const realFetch = global.fetch;
   global.fetch = async (url, opts) => {

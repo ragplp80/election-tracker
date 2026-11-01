@@ -93,6 +93,41 @@ function coverageOf(races, untracked) {
   return { senate: part(S.senate, "senate"), gov: part(S.gov, "gov"), house: part(houseKeys, "house"), untracked };
 }
 
+// The race list, shared between requests. Building it takes ~250 Kalshi calls (30-90 seconds), so
+// it is kept in three places, fastest first: this instance's memory, Vercel's Runtime Cache (shared
+// by every function in the region, kept for a day), and finally a fresh build. A copy older than an
+// hour is still used, and a rebuild starts in the background, so a viewer waits for a build only
+// when nothing has been kept at all.
+let vercelFns = null;
+try { vercelFns = require("@vercel/functions"); } catch (e) {}   // not installed when testing locally
+const CATALOG_KEY = "catalog-v1", FRESH_MS = 3600e3;
+let memCatalog = null, rebuilding = null;
+function runtimeCache() {
+  try { return vercelFns && process.env.VERCEL ? vercelFns.getCache() : null; } catch (e) { return null; }
+}
+function rebuildCatalog() {
+  if (!rebuilding) {
+    rebuilding = buildCatalog().then(async (cat) => {
+      memCatalog = cat;
+      try { await runtimeCache()?.set(CATALOG_KEY, cat, { ttl: 86400, name: "race list" }); } catch (e) {}
+      return cat;
+    }).finally(() => { rebuilding = null; });
+  }
+  return rebuilding;
+}
+async function getCatalog({ maxAge = FRESH_MS } = {}) {
+  if (!memCatalog) {
+    try { memCatalog = (await runtimeCache()?.get(CATALOG_KEY)) || null; } catch (e) {}
+  }
+  if (!memCatalog) return rebuildCatalog();
+  if (Date.now() - memCatalog.at > maxAge) {
+    const job = rebuildCatalog().catch(() => {});
+    try { vercelFns?.waitUntil?.(job); } catch (e) {}   // let the rebuild finish after the response
+  }
+  return memCatalog;
+}
+function resetCatalogCache() { memCatalog = null; rebuilding = null; }
+
 // Fresh prices for a catalog: a few batched calls by ticker. Races the batch didn't fully cover
 // (Kalshi had a hiccup, or a market closed) are re-read one series at a time; the rest keep the
 // batched prices, so one short batch no longer means re-reading every race.
@@ -141,4 +176,4 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
   return { mode: "sweep", stats, races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats };
 }
 
-module.exports = { kget, pool, buildCatalog, refreshPrices, coverageOf, KALSHI };
+module.exports = { kget, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };

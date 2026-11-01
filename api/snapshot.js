@@ -1,26 +1,13 @@
 // GET /api/snapshot: every 2026 race with current prices, in one response.
 // Vercel keeps each answer for 15 seconds and shares it with everyone viewing, so the page
 // makes one call per refresh and Kalshi sees a handful of calls per 15 seconds at most.
-const { buildCatalog, refreshPrices } = require("./_lib.js");
-
-async function loadCatalog(req) {
-  // Ask our own cached /api/catalog first, so the expensive build is shared and done rarely.
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  if (host) {
-    try {
-      const proto = req.headers["x-forwarded-proto"] || "https";
-      const r = await fetch(`${proto}://${host}/api/catalog`, { headers: { accept: "application/json" } });
-      if (r.ok) return await r.json();
-    } catch (e) {}
-  }
-  return buildCatalog();
-}
+const { getCatalog, refreshPrices } = require("./_lib.js");
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   try {
     const t0 = Date.now();
-    const cat = await loadCatalog(req);
+    const cat = await getCatalog();
     const t1 = Date.now();
     const fresh = await refreshPrices(cat);
     const t2 = Date.now();
