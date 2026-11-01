@@ -1,0 +1,18 @@
+# Keeps the server's race list warm. Building it from scratch takes a minute or two, and that
+# happens when nobody has opened the page for a while, so the first refresh after a quiet stretch
+# was slow. Asking for it every 20 minutes means a viewer almost never waits for a rebuild.
+name: keep warm
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Race list and prices
+        run: |
+          for path in api/catalog api/snapshot; do
+            curl -sS -o /dev/null --max-time 300 -w "$path %{http_code} %{time_total}s\n" "https://election-tracker-indol.vercel.app/$path" || true
+          done

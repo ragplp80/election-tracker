@@ -308,7 +308,7 @@ test("daily baseline: seats and odds compared with midnight Eastern", async (t) 
   noErrors(pg);
 });
 
-test("trend lines plot the leader's chance: a Republican pulling ahead rises in red", async (t) => {
+test("trend lines rise for whoever gained, in their color", async (t) => {
   const now = Date.now(), H = 3600e3, hist = {};
   const add = (id, f) => { hist[id] = []; for (let x = now - 24 * H; x <= now; x += 30 * 60e3) hist[id].push([x, f((now - x) / H)]); };
   add("SENATEOHS-26", (a) => (a > 10 ? 0.35 : 0.27));   // Husted (R) leads and gains 8 points
@@ -320,7 +320,7 @@ test("trend lines plot the leader's chance: a Republican pulling ahead rises in 
   assert.ok(ohEnd < ohStart, "Republican leader gaining: line rises (smaller y is higher)");
   assert.equal(pg.row("SENATEOHS-26").querySelector(".spark polyline").getAttribute("stroke"), "var(--rep)");
   const [gaStart, gaEnd] = ends("SENATEGA-26");
-  assert.ok(gaEnd > gaStart, "Democratic leader slipping: line falls");
+  assert.ok(gaEnd < gaStart, "Democratic leader slipping: the Republican gained, so the line rises");
   assert.equal(pg.row("SENATEGA-26").querySelector(".spark polyline").getAttribute("stroke"), "var(--rep)", "colored by who gained");
 });
 
