@@ -122,3 +122,21 @@ test("the map starts closed and isn't loaded until opened; the choice is remembe
   assert.ok(pg.d.getElementById("mapCard").classList.contains("collapsed"));
   assert.equal(JSON.parse(pg.w.localStorage.getItem("et.ui")).mapOpen, false);
 });
+
+test("a state's race list: closest races first, safe seats folded away", async (t) => {
+  const { defaultBoard, twoParty } = require("./helpers.js");
+  const board = defaultBoard();
+  board.events.KXHOUSERACE = [twoParty("KXHOUSERACE-GA02-26", "Sanford Bishop", "Matt Day", 0.97), twoParty("KXHOUSERACE-GA13-26", "Jasmine Clark", "Jonathan Chavez", 0.98),
+    twoParty("KXHOUSERACE-GA12-26", "Ceretta Smith", "Rick Allen", 0.15), twoParty("KXHOUSERACE-GA06-26", "Lucy McBath", "Kevin Martin", 0.55)];
+  const pg = page(t, { board });
+  await loaded(pg);
+  await waitFor(() => pg.d.querySelector('#mapWrap path[data-st="GA"]'), { what: "map" });
+  pg.d.querySelector('#mapWrap path[data-key="GA-6"]').dispatchEvent(new pg.w.MouseEvent("click", { bubbles: true }));
+  await waitFor(() => pg.text("#mapCrumb") === "Georgia", { what: "drill-in" });
+  const labels = () => [...pg.d.querySelectorAll("#mapRaces .mrl")].map((b) => b.textContent);
+  assert.deepEqual(labels().filter((l) => /^GA-/.test(l)), ["GA-6", "GA-12"], "competitive first, safe ones hidden");
+  assert.match(pg.text("#mapSafe"), /Show 2 safe seats/);
+  pg.d.getElementById("mapSafe").click();
+  assert.deepEqual(labels().filter((l) => /^GA-/.test(l)), ["GA-6", "GA-12", "GA-2", "GA-13"]);
+  assert.match(pg.text("#mapSafe"), /Hide safe seats/);
+});

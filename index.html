@@ -50,6 +50,18 @@ h1 small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color
 .toggle[aria-pressed="true"] .switch::after{transform:translateX(16px);background:#111}
 .progress{height:2px;background:var(--line);border-radius:1px;overflow:hidden;width:100%;}
 .progress i{display:block;height:100%;width:0;background:var(--move);transition:width .2s}
+/* Phones: the header stays pinned, so keep it to two short lines (title and buttons, then status) */
+@media (max-width:560px){
+  header{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:10px 0 8px}
+  header{grid-template-columns:minmax(0,1fr) auto}
+  h1{font-size:16px;white-space:nowrap} h1 small{display:none}
+  .hctl{grid-column:2;grid-row:1;gap:6px;flex-wrap:nowrap}
+  .hstatus{grid-column:1/-1;font-size:11.5px;flex-direction:row;flex-wrap:wrap;column-gap:8px}
+  .progress{grid-column:1/-1}
+  .btn{padding:7px 10px} .toggle{padding:5px 7px 5px 9px;gap:6px}
+  .toggle .switch{width:32px} .toggle[aria-pressed="true"] .switch::after{transform:translateX(10px)}
+  .toggle .lbl-long{display:none}
+}
 
 /* Control strip */
 .strip{display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:12px;margin:4px 0 14px}
@@ -213,10 +225,13 @@ footer a{color:var(--muted)}
 .t-rsafe{background:var(--rep)} .t-rlik{background:color-mix(in srgb,var(--rep) 72%,var(--surface))} .t-rlean{background:color-mix(in srgb,var(--rep) 45%,var(--surface))} .t-rtoss{background:color-mix(in srgb,var(--rep) 22%,var(--surface2))}
 .t-ind{background:var(--ind)} .t-none{background:color-mix(in srgb,var(--faint) 35%,var(--surface));color:var(--muted)}
 .mapraces{display:grid;gap:0}
-.mr{display:grid;grid-template-columns:minmax(90px,1fr) 2fr auto;gap:10px;align-items:center;padding:7px 2px;border-top:1px solid var(--line);font-size:13px;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;width:100%}
+.mr{display:grid;grid-template-columns:minmax(90px,1fr) 2fr minmax(52px,auto);grid-template-areas:"lab odds mv";gap:10px;align-items:center;padding:7px 2px;border-top:1px solid var(--line);font-size:13px;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;width:100%}
 .mr:first-child{border-top:0}
 .mr b{font-weight:700}
 .mr .mrnone{color:var(--faint)}
+.mr .mrl{grid-area:lab}.mr .mro{grid-area:odds;min-width:0}.mr .mrm{grid-area:mv;text-align:right;white-space:nowrap}
+.mrmore{justify-self:start;margin-top:6px;border:1px solid var(--line);background:var(--surface2);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700}
+@media (max-width:560px){.mr{grid-template-columns:1fr auto;grid-template-areas:"lab mv" "odds odds";gap:4px 10px;padding:9px 2px}}
 
 /* Race news in the detail sheet */
 .newshead{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:10px}
@@ -269,6 +284,16 @@ footer a{color:var(--muted)}
   .row .c,.row .heldcell{display:none}
   .row .mobilemoves{display:flex!important;grid-column:1/-1;gap:14px;font-size:12.5px;color:var(--muted)}
 }
+/* Phones: each control group on its own line; button rows scroll sideways instead of wrapping */
+@media (max-width:560px){
+  .tools{display:grid;grid-template-columns:1fr;gap:6px}
+  .tools .seglabel{margin-top:4px}
+  .tools .seg{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;max-width:100%}
+  .tools .seg::-webkit-scrollbar{display:none}
+  .seg button{white-space:nowrap;flex:0 0 auto}
+  .tools .count{margin-left:0}
+  .maphead .seg button{padding:7px 10px}
+}
 @media (max-width:560px){ .strip{grid-template-columns:1fr} .big{font-size:28px} .sheet-bg{align-items:flex-end;padding:0} .sheet{border-radius:14px 14px 0 0;padding-bottom:max(18px,env(safe-area-inset-bottom,0px))} }
 .mobilemoves{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -282,7 +307,7 @@ footer a{color:var(--muted)}
     <span id="baseline"></span>
   </div>
   <div class="hctl">
-    <button class="toggle" id="auto" aria-pressed="false" title="Refresh every minute"><span>Auto · 1 min</span><span class="switch"></span></button>
+    <button class="toggle" id="auto" aria-pressed="false" title="Refresh every minute"><span>Auto<span class="lbl-long"> · 1 min</span></span><span class="switch"></span></button>
     <button class="btn primary" id="refresh">Refresh</button>
   </div>
   <div class="progress"><i id="prog"></i></div>
@@ -848,7 +873,7 @@ function renderFeed(list){
 }
 
 // ---------- Map: Senate, governor and House by state, with a drill-in per state ----------
-let mapData=null,mapLoading=false,mapBuilt="";            // mapBuilt: which view the SVG currently shows
+let mapData=null,mapLoading=false,mapBuilt="",mapShowSafe=false;            // mapBuilt: which view the SVG currently shows
 const mapView={mode:ui.mapMode||"house",st:null};
 function leanClass(r){
   if(!r)return"none";
@@ -938,16 +963,25 @@ function renderMap(list){
     +(mapView.mode==="house"?`<span><i class="hatchsw"></i>New lines, shown as tiles</span>`:`<span>${sw("notup")}Not up in 2026</span>`);
   const box=$("mapRaces");
   if(!st){box.hidden=true;return}
-  const rows=[];
-  const add=(label,r)=>rows.push(r?`<button class="mr" data-open="${esc(r.id)}"><b>${esc(label)}</b><span>${oddsCell(r)}</span><span class="num">${fmtPts(r.dIn,r)}</span></button>`
-    :`<div class="mr"><b>${esc(label)}</b><span class="mrnone">No betting market</span><span></span></div>`);
-  if(HELD_SEN[st])add("Senate",look.sen.get(st));
-  if(HELD_GOV[st])add("Governor",look.gov.get(st));
+  // Statewide races first, then House races closest first; safe seats (favorite 90%+) fold away.
+  const row=(label,r)=>r?`<button class="mr" data-open="${esc(r.id)}"><b class="mrl">${esc(label)}</b><span class="mro">${oddsCell(r)}</span><span class="mrm num">${fmtPts(r.dIn,r)}</span></button>`
+    :`<div class="mr"><b class="mrl">${esc(label)}</b><span class="mro mrnone">No betting market</span><span class="mrm"></span></div>`;
+  const top=[];
+  if(HELD_SEN[st])top.push(row("Senate",look.sen.get(st)));
+  if(HELD_GOV[st])top.push(row("Governor",look.gov.get(st)));
   const n=M.tiles[st]||Object.keys(M.districts).filter(k=>k.startsWith(st+"-")&&!k.endsWith("-0")).length;
-  if(M.districts[st+"-0"])add("House (at large)",look.house.get(st+"-0"));
-  for(let i=1;i<=n;i++)if(look.house.get(`${st}-${i}`))add(`${st}-${i}`,look.house.get(`${st}-${i}`));
-  const nomkt=n-[...Array(n).keys()].filter(i=>look.house.get(`${st}-${i+1}`)).length;
-  box.innerHTML=rows.join("")+(nomkt>0?`<div class="mr"><b>Other districts</b><span class="mrnone">${nomkt} district${nomkt>1?"s":""} without a betting market</span><span></span></div>`:"");
+  const house=[];
+  if(M.districts[st+"-0"]&&look.house.get(st+"-0"))house.push(["House (at large)",look.house.get(st+"-0")]);
+  for(let i=1;i<=n;i++){const r=look.house.get(`${st}-${i}`);if(r)house.push([`${st}-${i}`,r])}
+  const fav=r=>r.d!=null?Math.max(val(r),1-val(r)):r.leader.p;
+  house.sort((a,b)=>fav(a[1])-fav(b[1]));
+  const close=house.filter(([,r])=>fav(r)<0.9),safe=house.filter(([,r])=>fav(r)>=0.9);
+  const nomkt=n-house.filter(([l])=>l!=="House (at large)").length;
+  box.innerHTML=top.join("")+close.map(([l,r])=>row(l,r)).join("")
+    +(safe.length?(mapShowSafe?safe.map(([l,r])=>row(l,r)).join("")+`<button class="mrmore" id="mapSafe">Hide safe seats</button>`
+      :`<button class="mrmore" id="mapSafe">Show ${safe.length} safe seat${safe.length>1?"s":""} (favorite 90%+)</button>`):"")
+    +(nomkt>0?`<div class="mr"><b class="mrl">Other districts</b><span class="mro mrnone">${nomkt} district${nomkt>1?"s":""} without a betting market</span><span class="mrm"></span></div>`:"");
+  const sb=$("mapSafe");if(sb)sb.onclick=e=>{e.stopPropagation();mapShowSafe=!mapShowSafe;render()};
   box.hidden=false;
 }
 function mapDescribe(key,stKey){
@@ -1096,7 +1130,8 @@ async function fullSweep(prog){
 // If it fails, the page falls back to asking for each race itself (fullSweep above).
 let snapFailedAt=0,savedFrom=null,coverage=null;   // coverage: what the server's race list found (for ?check)
 async function snapshotSweep(){
-  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),55000);
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),150000);   // a rebuild of the race list can take a minute or two
+  const slow=setTimeout(()=>{if(busy&&$("updated"))$("updated").innerHTML="Rebuilding the race list on the server. The first load after an update can take a minute or two…"},8000);
   try{
     const r=await fetch("/api/snapshot",{signal:ctl.signal,headers:{accept:"application/json"}});
     if(!r.ok)throw new Error("HTTP "+r.status);
@@ -1104,7 +1139,7 @@ async function snapshotSweep(){
     if(!Array.isArray(j.races)||!j.races.length)throw new Error("empty snapshot");
     coverage=j.coverage||null;
     return{out:j.races,errs:0,seats:j.seats,at:j.at};
-  }finally{clearTimeout(t)}
+  }finally{clearTimeout(t);clearTimeout(slow)}
 }
 // Save the latest odds on this device so the next visit can show them instantly.
 function saveSnapshot(out,seats){
@@ -1489,7 +1524,7 @@ $("mapToggle").onclick=()=>{ui.mapOpen=ui.mapOpen!==true;saveUi();applyMapOpen()
 $("mapBack").onclick=()=>{mapView.st=null;delete $("mapInfo").dataset.hover;render()};
 function mapTap(target){
   const el=target.closest?.("[data-key],[data-st]");if(!el||!mapData)return;
-  if(!mapView.st){mapView.st=el.dataset.st;delete $("mapInfo").dataset.hover;render();$("mapCard").scrollIntoView?.({block:"nearest"});return}
+  if(!mapView.st){mapView.st=el.dataset.st;mapShowSafe=false;delete $("mapInfo").dataset.hover;render();$("mapCard").scrollIntoView?.({block:"nearest"});return}
   const key=el.dataset.key;
   if(key){const r=mapRaceLookup(pickRaces().list).house.get(key);if(r)openDetail(r.id);else $("mapInfo").innerHTML=mapDescribe(key)}
   else{const look=mapRaceLookup(pickRaces().list),r=mapView.mode==="senate"?look.sen.get(el.dataset.st):look.gov.get(el.dataset.st);if(r)openDetail(r.id)}
