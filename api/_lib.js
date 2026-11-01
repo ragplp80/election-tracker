@@ -81,7 +81,23 @@ async function buildCatalog() {
     if (c.type === "seats") { seats = Core.slimEvent(ev); continue; }
     races.push({ meta, events: [Core.slimEvent(ev)] });
   }
-  return { at: Date.now(), races, seats, failed: failed.length, missed: failed, coverage: coverageOf(races, untracked) };
+  const margins = await marginEvents();
+  return { at: Date.now(), races, seats, margins, failed: failed.length, missed: failed, coverage: coverageOf(races, untracked) };
+}
+
+// Margin-of-victory markets for statewide races, used by the "How We Looking" page:
+// KXGENERALMOV-SENATEGA-26 (brackets like "Jon Ossoff, 8-10%") and, for Nebraska, KXMIDTERMMOV
+// ladders ("Ricketts, 5+ pts"). Missing ones just leave a race without a margin.
+const MARGIN_EVENT = /^KXGENERALMOV-(SENATE|GOVPARTY)[A-Z]{2}S?-26$|^KXMIDTERMMOV-[A-Z]{2}SEN/;
+async function marginEvents() {
+  const out = [];
+  for (const series of ["KXGENERALMOV", "KXMIDTERMMOV"]) {
+    try {
+      const e = await kget(`/events?series_ticker=${series}&status=open&with_nested_markets=true&limit=200`);
+      for (const ev of e.events || []) if (MARGIN_EVENT.test(ev.event_ticker)) out.push(Core.slimEvent(ev));
+    } catch (err) {}
+  }
+  return out;
 }
 
 // Which seats have a market, and which don't (shown in the ?check report and on the House card)
@@ -100,7 +116,7 @@ function coverageOf(races, untracked) {
 // when nothing has been kept at all.
 let vercelFns = null;
 try { vercelFns = require("@vercel/functions"); } catch (e) {}   // not installed when testing locally
-const CATALOG_KEY = "catalog-v1", FRESH_MS = 3600e3;
+const CATALOG_KEY = "catalog-v2", FRESH_MS = 3600e3;
 let memCatalog = null, rebuilding = null;
 function runtimeCache() {
   try { return vercelFns && process.env.VERCEL ? vercelFns.getCache() : null; } catch (e) { return null; }
@@ -132,7 +148,8 @@ function resetCatalogCache() { memCatalog = null; rebuilding = null; }
 // (Kalshi had a hiccup, or a market closed) are re-read one series at a time; the rest keep the
 // batched prices, so one short batch no longer means re-reading every race.
 async function refreshPrices(cat, { chunk = 100 } = {}) {
-  const all = [...cat.races.flatMap((r) => r.events), ...(cat.seats ? [cat.seats] : [])];
+  const margins = cat.margins || [];
+  const all = [...cat.races.flatMap((r) => r.events), ...(cat.seats ? [cat.seats] : []), ...margins];
   const tickers = all.flatMap((ev) => ev.markets.filter((m) => m.status !== "finalized").map((m) => m.ticker));
   const chunks = [];
   for (let i = 0; i < tickers.length; i += chunk) chunks.push(tickers.slice(i, i + chunk));
@@ -147,7 +164,7 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
   const short = cat.races.filter((r) => !r.events.every(covered));
   const stats = { tickers: tickers.length, calls: chunks.length, swept: short.length };
   if (!short.length) {
-    return { mode: "batch", stats, races: cat.races.map((r) => ({ meta: r.meta, events: r.events.map(swap) })), seats: cat.seats && swap(cat.seats) };
+    return { mode: "batch", stats, races: cat.races.map((r) => ({ meta: r.meta, events: r.events.map(swap) })), seats: cat.seats && swap(cat.seats), margins: margins.map(swap) };
   }
   // Re-read the races the batch missed, one call per series (a multi-district series is read once
   // and split by event)
@@ -173,7 +190,7 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
     } catch (e) {}
   }
   stats.series = bySeries.size;
-  return { mode: "sweep", stats, races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats };
+  return { mode: "sweep", stats, races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats, margins: margins.map(swap) };
 }
 
 module.exports = { kget, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };

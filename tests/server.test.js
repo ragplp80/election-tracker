@@ -123,6 +123,22 @@ test("race list: kept between requests, and an hour-old copy is served while it 
   } finally { restore(); }
 });
 
+test("catalog: statewide margin-of-victory markets come along, other margin markets don't", async () => {
+  const H = require("./helpers.js");
+  const board = defaultBoard();
+  board.events.KXGENERALMOV = [{ event_ticker: "KXGENERALMOV-SENATETX-26", markets: [H.market("KXGENERALMOV-SENATETX-26-A", "James Talarico, 0-2%", 0.2)] },
+    { event_ticker: "KXGENERALMOV-SENATEFLS-26", markets: [H.market("KXGENERALMOV-SENATEFLS-26-A", "Ashley Moody, 0-2%", 0.1)] },
+    { event_ticker: "KXGENERALMOV-MAYORNYC-26", markets: [H.market("KXGENERALMOV-MAYORNYC-26-A", "X, 0-2%", 0.5)] }];
+  board.events.KXMIDTERMMOV = [{ event_ticker: "KXMIDTERMMOV-NESENR", markets: [H.market("KXMIDTERMMOV-NESENR-1", "Ricketts, 1+ pts", 0.7)] }];
+  const restore = useFakeKalshi(board, []);
+  try {
+    const cat = await lib.buildCatalog();
+    assert.deepEqual(cat.margins.map((e) => e.event_ticker).sort(), ["KXGENERALMOV-SENATEFLS-26", "KXGENERALMOV-SENATETX-26", "KXMIDTERMMOV-NESENR"]);
+    const fresh = await lib.refreshPrices(cat);
+    assert.equal(fresh.margins.length, 3, "margins refreshed with the prices");
+  } finally { restore(); }
+});
+
 test("relay: passes allowed read-only paths, refuses others", withBoard(defaultBoard(), async () => {
   const relay = require("../api/kalshi.js");
   const ok = await callHandler(relay, { path: "/events?series_ticker=SENATETX&with_nested_markets=true" });

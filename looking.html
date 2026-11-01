@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="How We Looking">
+<title>How We Looking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<style>
+/* The "early tells" chart, read live from the betting odds. Same look as the main tracker. */
+:root{
+  --bg:#0d1520; --surface:#141e2b; --surface2:#1a2636; --line:#243346;
+  --fg:#e6ecf2; --muted:#8b9bb0; --faint:#56667a;
+  --dem:#4f8ff7; --rep:#f0574a; --ind:#b38df0; --move:#f2b33d;
+  --font:"Archivo",-apple-system,"Helvetica Neue",Arial,sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root{
+  --bg:#eef1f5; --surface:#fff; --surface2:#f6f8fb; --line:#d8dee6;
+  --fg:#121a24; --muted:#5a6878; --faint:#98a4b3;
+  --dem:#1f5fd6; --rep:#cf2e2e; --ind:#7a4fc9; --move:#a86a00; color-scheme:light;
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.35 var(--font);
+  padding:env(safe-area-inset-top,0) max(16px,env(safe-area-inset-right,0px)) max(24px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  -webkit-text-size-adjust:100%}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:inherit}
+
+header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:12px 0 10px;position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:22px;font-weight:800;font-variation-settings:"wdth" 75;letter-spacing:.01em;text-transform:uppercase;white-space:nowrap}
+.hctl{display:flex;gap:8px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 12px;font-weight:700;font-size:14px;text-decoration:none;white-space:nowrap}
+.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn[disabled]{opacity:.55}
+.status{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.status b{color:var(--fg);font-weight:600}
+.err{color:var(--rep)}
+
+h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.sub{font-size:12px;color:var(--muted)}
+.preview{background:color-mix(in srgb,var(--move) 12%,var(--surface));border-color:color-mix(in srgb,var(--move) 40%,var(--line));font-size:13px}
+
+/* Verdicts */
+.verdicts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.verdicts .card{margin:0}
+.vname{font-size:30px;font-weight:800;font-variation-settings:"wdth" 80;line-height:1.05;margin:2px 0 10px}
+.t-riptide{color:var(--rep)} .t-tide,.t-wave,.t-tsunami{color:var(--dem)}
+.scale{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:10px}
+.scale span{font-size:10.5px;font-weight:700;text-align:center;padding:5px 2px;border-radius:4px;background:var(--surface2);color:var(--faint);letter-spacing:.02em}
+.scale span.on.riptide{background:var(--rep);color:#fff}
+.scale span.on.tide,.scale span.on.wave,.scale span.on.tsunami{background:var(--dem);color:#fff}
+.why{display:grid;gap:4px;font-size:13px}
+.why b{font-weight:700}
+.next{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px}
+.next b{font-weight:700}
+
+/* House grid */
+.hgrid{display:grid;grid-template-columns:96px repeat(4,minmax(0,1fr));gap:6px}
+.hgrid .colh{font-size:12px;font-weight:800;text-align:center;padding:7px 4px;border-radius:8px;line-height:1.15}
+.hgrid .colh small{display:block;font-weight:600;font-size:10.5px;opacity:.85}
+.colh.riptide{background:color-mix(in srgb,var(--rep) 85%,transparent);color:#fff}
+.colh.tide,.colh.wave,.colh.tsunami{background:color-mix(in srgb,var(--dem) 85%,transparent);color:#fff}
+.colh .cnt{display:block;margin-top:3px;font-size:11px;font-weight:700}
+.rowh{background:var(--surface2);border-radius:8px;padding:7px 8px;font-size:11px;color:var(--muted);line-height:1.2}
+.rowh b{display:block;font-size:16px;color:var(--fg);font-weight:800}
+.rowh.closed b::after{content:" ✓";color:var(--muted);font-size:12px}
+.rowh.nextup{outline:2px solid var(--move)}
+.cell{display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start;min-height:34px;border-radius:8px;padding:4px;background:color-mix(in srgb,var(--surface2) 60%,transparent)}
+.chip{border-radius:6px;padding:4px 6px;font-size:11.5px;line-height:1.15;min-width:84px;border:1px solid transparent;background:var(--surface2)}
+.chip b{font-weight:800;font-size:12px}
+.chip .who{display:block;font-size:10.5px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px}
+.chip .od{display:block;font-weight:700;font-size:11px;margin-top:1px}
+.chip.none{color:var(--faint)}
+.chip.D{background:color-mix(in srgb,var(--dem) 18%,var(--surface));color:var(--fg)}
+.chip.R{background:color-mix(in srgb,var(--rep) 18%,var(--surface));color:var(--fg)}
+.chip.D.lock{background:var(--dem);color:#fff} .chip.R.lock{background:var(--rep);color:#fff}
+.chip.D .od{color:var(--dem)} .chip.R .od{color:var(--rep)} .chip.lock .od{color:#fff}
+.chip.test{border:1.5px dashed var(--rep);background:transparent;min-width:120px}
+.chip.test.pass{background:color-mix(in srgb,var(--rep) 16%,transparent)}
+.chip.test .od{color:var(--muted)} .chip.test.pass .od{color:var(--rep)}
+.hlegend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:var(--muted);margin-top:10px}
+.hlegend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px}
+
+/* Senate */
+.srow{display:grid;grid-template-columns:52px minmax(130px,1.1fr) 124px 100px repeat(4,minmax(0,1fr));gap:6px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
+.srow.head{border-top:0;padding-top:0;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.srow.head .sc{background:none;color:var(--muted);padding:0}
+.st-when{font-size:12px;color:var(--muted)}
+.st-name b{font-size:14px;font-weight:800}
+.st-name span{display:block;font-size:11.5px;color:var(--muted)}
+.st-odds{font-weight:800;font-size:15px;white-space:nowrap}
+.st-odds small{display:block;font-size:10.5px;font-weight:600;color:var(--muted)}
+.st-odds.D{color:var(--dem)} .st-odds.R{color:var(--rep)} .st-odds.I{color:var(--ind)}
+.lockmark{font-size:10px;font-weight:800;letter-spacing:.06em;border-radius:4px;padding:1px 4px;margin-left:4px;vertical-align:2px}
+.lockmark.D{background:var(--dem);color:#fff} .lockmark.R{background:var(--rep);color:#fff} .lockmark.I{background:var(--ind);color:#fff}
+.st-mov{font-weight:700;font-size:14px}
+.st-mov small{display:block;font-size:10.5px;font-weight:600;color:var(--muted)}
+.sc{font-size:11.5px;font-weight:700;text-align:center;padding:6px 2px;border-radius:5px;background:var(--surface2);color:var(--faint);white-space:nowrap}
+.sc.on.riptide{background:var(--rep);color:#fff}
+.sc.on.tide,.sc.on.wave,.sc.on.tsunami{background:var(--dem);color:#fff}
+.stally{font-size:12.5px;color:var(--muted);margin-top:10px}
+
+/* Keys */
+.krow{display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.krow:first-of-type{border-top:0}
+.k-when{font-size:12px;font-weight:700;color:var(--muted)}
+.k-text b{font-weight:700}
+.k-text span{display:block;font-size:12px;color:var(--muted)}
+.pill{font-size:11.5px;font-weight:800;border-radius:999px;padding:4px 10px;white-space:nowrap;text-align:center;min-width:72px}
+.pill small{display:block;font-size:10px;font-weight:600;opacity:.9}
+.pill.yesD{background:var(--dem);color:#fff} .pill.yesR{background:var(--rep);color:#fff}
+.pill.no{background:var(--surface2);color:var(--muted)}
+.pill.wait{background:transparent;border:1px solid var(--line);color:var(--muted)}
+.pill.watch{background:transparent;color:var(--faint);border:1px dashed var(--line)}
+.foot{font-size:11.5px;color:var(--muted);margin:14px 0}
+
+/* Phones: the House grid becomes one block per closing time; Senate rows wrap to two lines */
+@media (max-width:760px){
+  .verdicts{grid-template-columns:1fr}
+  .hgrid{display:block}
+  .hgrid .colh{display:none}
+  .hgrid .rowh{margin-top:12px}
+  .hgrid .cell{margin-top:5px;padding:5px}
+  .hgrid .cell::before{content:attr(data-tier);display:block;width:100%;font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
+  .hgrid .cell.riptide::before{color:var(--rep)} .hgrid .cell:not(.riptide)::before{color:var(--dem)}
+  .hgrid .cell.empty{display:none}
+  .chip{min-width:0;flex:1 1 30%}
+  .srow{grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"name odds mov" "sc sc sc";row-gap:6px}
+  .srow .st-when{display:none}
+  .srow .st-name{grid-area:name} .srow .st-odds{grid-area:odds;text-align:right} .srow .st-mov{grid-area:mov;text-align:right;min-width:70px}
+  .srow .scs{grid-area:sc;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+  .srow.head{display:none}
+  .sc{white-space:normal;font-size:11px}
+  .krow{grid-template-columns:52px minmax(0,1fr);gap:4px 8px}
+  .krow .pill{grid-column:2;justify-self:start;display:flex;gap:6px;align-items:baseline;min-width:0}
+  .krow .pill small{display:inline}
+}
+@media (min-width:761px){ .srow .scs{display:contents} }
+@media (max-width:560px){
+  header{padding:10px 0 8px}
+  h1{font-size:16px}
+  .btn{padding:7px 10px;font-size:13px}
+  .vname{font-size:26px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>How We Looking</h1>
+  <div class="hctl">
+    <a class="btn" href="./">Live odds</a>
+    <button class="btn primary" id="refresh">Refresh</button>
+  </div>
+  <div class="status" id="status">Loading the odds…</div>
+</header>
+
+<div class="card preview" id="preview" hidden></div>
+
+<section class="verdicts">
+  <div class="card" id="vHouse"><h2>House</h2><div class="sub">Loading…</div></div>
+  <div class="card" id="vSenate"><h2>Senate</h2><div class="sub">Loading…</div></div>
+</section>
+
+<div class="card next" id="next"></div>
+
+<section class="card">
+  <h2>House: a blue wave should be clear by 9pm</h2>
+  <div class="hgrid" id="hgrid"></div>
+  <div class="hlegend">
+    <span><i style="background:var(--dem)"></i>Democrat 92%+ (counted as won)</span>
+    <span><i style="background:color-mix(in srgb,var(--dem) 30%,var(--surface))"></i>Democrat favored</span>
+    <span><i style="background:color-mix(in srgb,var(--rep) 30%,var(--surface))"></i>Republican favored</span>
+    <span><i style="background:var(--rep)"></i>Republican 92%+</span>
+    <span><i style="border:1.5px dashed var(--rep)"></i>GOP test: red when the GOP clears it</span>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Senate: control should come into focus by 11pm</h2>
+  <div id="senate"></div>
+  <div class="stally" id="stally"></div>
+</section>
+
+<section class="card">
+  <h2>Keys to watch</h2>
+  <div id="keys"></div>
+</section>
+
+<div class="foot" id="foot"></div>
+
+<script src="core.js"></script>
+<script src="looking-data.js"></script>
+<script>
+"use strict";
+const L=window.LOOKING,WIN=0.92;                     // 92%+ counts as won
+const ELECTION_DAY="2026-11-03";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.now();
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const pct=p=>p==null?"–":Math.round(p*100)+"%";
+const pts=m=>m==null?"–":Math.abs(m)<0.25?"Even":(m>0?"D +":"R +")+Math.abs(m).toFixed(1);
+const who=(m,d,r)=>m==null?"–":Math.abs(m)<0.25?"Even":`${m>0?d:r} +${Math.abs(m).toFixed(1)}`;   // "Talarico +2.3"
+const fmtClock=h=>{let hh=Math.floor(h)%24;const mm=Math.round((h%1)*60);const ap=hh>=12?"pm":"am";hh=hh%12||12;return hh+(mm?":"+String(mm).padStart(2,"0"):"")+ap};
+const tierIdx=id=>L.tiers.findIndex(t=>t.id===id);
+
+// Hours since midnight ET on election day (negative before; 27 = 3am the next morning)
+function nightHour(){
+  const now=new Date(clockNow());
+  const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"numeric",minute:"numeric",hour12:false}).formatToParts(now);
+  const g=t=>p.find(x=>x.type===t).value;
+  const day=Date.UTC(+g("year"),+g("month")-1,+g("day")),e=Date.UTC(2026,10,3);
+  return (day-e)/864e5*24+(+g("hour")%24)+(+g("minute"))/60;
+}
+
+// ---------- Reading the snapshot ----------
+let snap=null,races=new Map(),margins=new Map(),seatStat=null,lastAt=null,busy=false;
+
+function ingest(j){
+  races=new Map();
+  for(const {meta,ev} of j.races||[]){
+    const o=Core.raceOdds(ev);if(!o||o.d==null)continue;
+    races.set(Core.seatKey(meta),{d:o.d,multi:o.multi,meta});
+  }
+  seatStat=null;
+  if(j.seats){const hs=Core.parseSeatMarket({events:[j.seats]});if(hs)seatStat=Core.seatStats(hs)}
+  margins=new Map();
+  const ladders=new Map();
+  for(const ev of j.margins||[]){
+    let m;
+    if((m=ev.event_ticker.match(/^KXGENERALMOV-(SENATE|GOVPARTY)([A-Z]{2})S?-26$/))){
+      const key=(m[1]==="SENATE"?"senate-":"gov-")+m[2];
+      const med=bracketMedian(ev,rNameFor(key));
+      if(med!=null)margins.set(key,med);
+    }else if((m=ev.event_ticker.match(/^KXMIDTERMMOV-([A-Z]{2})SEN/))){
+      const key="senate-"+m[1];(ladders.get(key)||ladders.set(key,[]).get(key)).push(ev);
+    }
+  }
+  // Ladder markets ("Ricketts, 5+ pts") fill in where there are no bracket markets
+  for(const [key,evs] of ladders)if(!margins.has(key)){const med=ladderMedian(evs,rNameFor(key),races.get(key));if(med!=null)margins.set(key,med)}
+}
+function rNameFor(key){
+  const [type,st]=key.split("-");
+  return type==="senate"?L.senate.find(s=>s.st===st)?.r:L.govR[st];
+}
+const sideIsR=(name,rName)=>!!rName&&name.toLowerCase().includes(rName.toLowerCase());
+// Bracket markets: "Jon Ossoff, 8-10%", "Ashley Hinson, ≥10%". Middle of the market's
+// distribution of final margins, Democrat (or independent) positive.
+function bracketMedian(ev,rName){
+  if(!rName)return null;
+  const bins=[];
+  for(const mk of ev.markets||[]){
+    const lab=mk.yes_sub_title||mk.subtitle||"";const p=Core.priceOf(mk);if(p==null)continue;
+    const [name,rng]=lab.split(/,\s*/);if(!rng)continue;
+    let a,b,x;
+    if((x=rng.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)/))){a=+x[1];b=+x[2]}
+    else if((x=rng.match(/[≥>]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*\+/))){a=+(x[1]||x[2]);b=a+4}
+    else continue;
+    const r=sideIsR(name,rName);
+    bins.push(r?{lo:-b,hi:-a,p}:{lo:a,hi:b,p});
+  }
+  const tot=bins.reduce((s,x)=>s+x.p,0);if(bins.length<3||!tot)return null;
+  bins.sort((x,y)=>x.lo-y.lo);
+  let c=0;
+  for(const x of bins){const q=x.p/tot;if(c+q>=0.5)return x.lo+((0.5-c)/q)*(x.hi-x.lo);c+=q}
+  return bins[bins.length-1].hi;
+}
+// Ladder markets: "Ricketts, 5+ pts" = chance he wins by 5 or more. Find where it crosses 50%.
+function ladderMedian(evs,rName,race){
+  if(!race)return null;
+  const rL=[],oL=[];
+  for(const ev of evs)for(const mk of ev.markets||[]){
+    const lab=mk.yes_sub_title||mk.subtitle||"";const x=lab.match(/^(.*?),\s*(\d+(?:\.\d+)?)\+/);const p=Core.priceOf(mk);
+    if(!x||p==null||p<=0)continue;                      // 0 = no trades yet
+    (sideIsR(x[1],rName)?rL:oL).push([+x[2],p]);
+  }
+  const cross=(ladder,p0)=>{
+    const pts=[[0,p0],...ladder.sort((a,b)=>a[0]-b[0])];
+    for(let i=1;i<pts.length;i++)pts[i][1]=Math.min(pts[i][1],pts[i-1][1]);   // can't rise with the margin
+    for(let i=1;i<pts.length;i++)if(pts[i][1]<0.5){const [k0,p0_]=pts[i-1],[k1,p1]=pts[i];return k0+(p0_-0.5)/Math.max(1e-6,p0_-p1)*(k1-k0)}
+    return pts[pts.length-1][0];
+  };
+  if(1-race.d>=0.5)return rL.length?-cross(rL,1-race.d):null;
+  return oL.length?cross(oL,race.d):null;
+}
+
+// ---------- Scenario ranges ("R4-9", "Even-D4", "R win or D <5", "Any D win") ----------
+function parseRange(s){
+  const t=s.replace(/\s+/g," ").trim();let x;
+  const v=(side,n)=>side==="R"?-n:+n;
+  if(/^Any [DI] win$/.test(t))return[0,Infinity];
+  if(/^Any R win$/.test(t))return[-Infinity,0];
+  if((x=t.match(/^R win or [DI] <(\d+)$/)))return[-Infinity,+x[1]];
+  if((x=t.match(/^([RDI])(\d+)\+$/)))return x[1]==="R"?[-Infinity,-x[2]]:[+x[2],Infinity];
+  if((x=t.match(/^([RDI])(\d+)-Even$/)))return[Math.min(v(x[1],+x[2]),0),Math.max(v(x[1],+x[2]),0)];
+  if((x=t.match(/^Even-([RDI])(\d+)$/)))return[Math.min(v(x[1],+x[2]),0),Math.max(v(x[1],+x[2]),0)];
+  if((x=t.match(/^([RDI])(\d+)-([RDI])(\d+)$/))){const a=v(x[1],+x[2]),b=v(x[3],+x[4]);return[Math.min(a,b),Math.max(a,b)]}
+  if((x=t.match(/^([RDI])(\d+)-(\d+)$/))){const a=v(x[1],+x[2]),b=v(x[1],+x[3]);return[Math.min(a,b),Math.max(a,b)]}
+  return null;
+}
+// Which scenario column a margin falls in (the nearest one when it lands in a gap like D4.5)
+function columnFor(ranges,m){
+  if(m==null)return -1;
+  let best=-1,bd=Infinity;
+  ranges.forEach((s,i)=>{const r=parseRange(s);if(!r)return;const d=m<r[0]?r[0]-m:m>r[1]?m-r[1]:0;if(d<bd){bd=d;best=i}});
+  return best;
+}
+
+// ---------- House ----------
+const houseRace=k=>races.get("house-"+k.replace("-AL","-0"));
+function houseTier(tier,rows){
+  const seats=rows.flatMap(r=>r[tier]).map(([k])=>k);
+  let withMkt=0,fav=0,locked=0;
+  for(const k of seats){const r=houseRace(k);if(!r)continue;withMkt++;
+    const p=tier==="riptide"?1-r.d:r.d;                  // riptide: the GOP taking Democratic seats
+    if(p>=0.5)fav++;if(p>=WIN)locked++}
+  return{total:seats.length,withMkt,fav,locked,hit:withMkt>0&&fav*2>=withMkt};
+}
+function gopTest(t){
+  let fav=0,locked=0,withMkt=0;
+  for(const k of t.seats){const r=houseRace(k);if(!r)continue;withMkt++;if(1-r.d>=0.5)fav++;if(1-r.d>=WIN)locked++}
+  return{fav,locked,withMkt,pass:withMkt>=t.need&&fav>=t.need,lockedPass:locked>=t.need};
+}
+function houseVerdict(){
+  const T={};for(const t of ["riptide","tide","wave","tsunami"])T[t]=houseTier(t,L.house);
+  const tests=L.gopTests.map(gopTest),passed=tests.filter(x=>x.pass).length;
+  const level=T.tsunami.hit&&T.wave.hit&&T.tide.hit?"tsunami":T.wave.hit&&T.tide.hit?"wave":T.tide.hit?"tide":"riptide";
+  let seatTier=null;
+  if(seatStat){const m=seatStat.median;seatTier=m>=L.houseSeats.tsunami?"tsunami":m>=L.houseSeats.wave?"wave":m>=L.houseSeats.tide?"tide":"riptide"}
+  return{T,tests,passed,level,seatTier};
+}
+
+// ---------- Senate ----------
+function senateVerdict(){
+  let net=0,lockedNet=0,decided=0,tossups=0;
+  for(const [st,held] of Object.entries(Core.HELD_SEN)){
+    const r=races.get("senate-"+st);if(!r)continue;
+    const pD=r.d,fav=pD>=0.5?"D":"R";                       // "D" includes an independent like Osborn
+    if(fav!==held)net+=fav==="D"?1:-1;
+    if(pD>=WIN&&held==="R")lockedNet++;
+    if(1-pD>=WIN&&held==="D")lockedNet--;
+    if(pD>=WIN||1-pD>=WIN)decided++;else tossups++;
+  }
+  const lv=n=>n>=L.senateNet.tsunami?"tsunami":n>=L.senateNet.wave?"wave":n>=L.senateNet.tide?"tide":"riptide";
+  const cols=[0,0,0,0];
+  for(const s of L.senate){const c=columnFor(s.ranges,margins.get("senate-"+s.st));if(c>=0)cols[c]++}
+  return{net,lockedNet,level:lv(net),lockedLevel:lv(lockedNet),decided,tossups,cols,ctl:races.get("ctlS")};
+}
+
+// ---------- Keys ----------
+const senR=st=>races.get("senate-"+st),govR=st=>races.get("gov-"+st);
+const rP=r=>r?1-r.d:null;
+const CHECKS={
+  ncCooper:()=>{const r=senR("NC");return r&&{yes:r.d>=WIN,now:`Cooper ${pct(r.d)}`}},
+  scGrahamBig:()=>{const m=margins.get("senate-SC");return m!=null&&{yes:m<=-9,now:who(m,"Andrews","Graham")}},
+  ohBrownAhead:()=>{const m=margins.get("senate-OH");return m!=null&&{yes:m>=0.4,now:`${who(m,"Brown","Husted")} (2024: −3.6)`}},
+  txPaxtonTrails:()=>{const s=margins.get("senate-TX"),g=margins.get("gov-TX");return s!=null&&g!=null&&{yes:s-g>2,now:`Paxton ${s>0?"−":"+"}${Math.abs(s).toFixed(1)}, Abbott ${g>0?"−":"+"}${Math.abs(g).toFixed(1)}`}},
+  flSenUncalled:()=>{const r=senR("FL");return r&&{yes:rP(r)<WIN,now:`Moody ${pct(rP(r))}`}},
+  flGovUncalled:()=>{const r=govR("FL");return r&&{yes:rP(r)<WIN,now:`Donalds ${pct(rP(r))}`}},
+  gaGovEarly:()=>{const r=govR("GA");return r&&{yes:rP(r)>=WIN,now:`Jackson ${pct(rP(r))}`}},
+  txAbbottUncalled:()=>{const r=govR("TX");return r&&{yes:rP(r)<WIN,now:`Abbott ${pct(rP(r))}`}},
+  senUnresolved:()=>{const r=races.get("ctlS");return r&&{yes:r.d<WIN&&1-r.d<WIN,now:`Dem control ${pct(r.d)}`}},
+};
+
+// ---------- Rendering ----------
+function scaleHtml(level){return`<div class="scale">${L.tiers.map(t=>`<span class="${t.id}${t.id===level?" on":""}">${esc(t.name.replace(/^(Red|Blue) /,""))}</span>`).join("")}</div>`}
+function render(){
+  const h=nightHour(),live=h>=17&&h<32,preview=h<17;
+  $("preview").hidden=!preview;
+  if(preview)$("preview").innerHTML=`<b>Preview.</b> Polls start closing ${h<-24?"Tuesday":"tomorrow"} at 6pm ET. Until then this reads the pre-election odds, so it shows where the markets expect each race to land.`;
+
+  // House verdict
+  const hv=houseVerdict(),tierName=id=>L.tiers[tierIdx(id)].name;
+  const tline=(id,lab)=>{const t=hv.T[id];return`<div>${lab}: Democrats ahead in <b>${t.fav} of ${t.withMkt}</b>${t.locked?` (${t.locked} at 92%+)`:""}${t.total>t.withMkt?` <span class="sub">· ${t.total-t.withMkt} without a market</span>`:""}</div>`};
+  const rip=hv.T.riptide;
+  $("vHouse").innerHTML=`<h2>House</h2><div class="vname t-${hv.level}">${tierName(hv.level)}</div>${scaleHtml(hv.level)}
+    <div class="why">${tline("tide","Tide races")}${tline("wave","Wave races")}${tline("tsunami","Tsunami races")}
+    <div>Riptide seats (Dem-held): GOP ahead in <b>${rip.fav} of ${rip.withMkt}</b> · GOP tests cleared: <b>${hv.passed} of ${hv.tests.length}</b></div>
+    ${seatStat?`<div class="sub">Seat-count market: Democrats ${Math.round(seatStat.median)} (${Math.round(seatStat.p10)}–${Math.round(seatStat.p90)}) → ${tierName(hv.seatTier)}</div>`:""}</div>`;
+
+  // Senate verdict
+  const sv=senateVerdict(),sgn=n=>n>0?`D +${n}`:n<0?`R +${-n}`:"even";
+  $("vSenate").innerHTML=`<h2>Senate</h2><div class="vname t-${sv.level}">${tierName(sv.level)}</div>${scaleHtml(sv.level)}
+    <div class="why"><div>If every favorite wins: <b>${sgn(sv.net)}</b> net seats (Democrats need +4)</div>
+    <div>Counted as won (92%+): <b>${sgn(sv.lockedNet)}</b> · ${sv.tossups} race${sv.tossups===1?"":"s"} still under 92%</div>
+    ${sv.ctl?`<div class="sub">Senate control market: Democrats ${pct(sv.ctl.d)}</div>`:""}</div>`;
+
+  // Up next
+  const rows=[...new Set([...L.house.map(r=>r.at),...L.senate.map(s=>s.at)])].sort((a,b)=>a-b);
+  const nxt=rows.find(a=>a>h);
+  const statesAt=a=>L.house.find(r=>r.at===a)?.states||L.senate.filter(s=>s.at===a).map(s=>s.st).join(" · ");
+  if(nxt==null)$("next").innerHTML=`<b>All polls in this chart have closed.</b>`;
+  else{const mins=Math.round((nxt-h)*60);const when=mins<=180?`in ${mins<60?mins+" min":Math.floor(mins/60)+"h "+(mins%60)+"m"}`:h<0?"Tuesday":"";
+    $("next").innerHTML=`<span class="sub">Next polls close</span> <b>${fmtClock(nxt)} ET</b> <span>${esc(statesAt(nxt))}</span> <span class="sub">${when}</span>`}
+
+  // House grid
+  const chip=([k,who,star])=>{const r=houseRace(k);
+    if(!r)return`<div class="chip none"><b>${esc(k)}</b>${star?"★":""}<span class="who">${esc(who)}</span><span class="od">No market</span></div>`;
+    const side=r.d>=0.5?"D":"R",p=Math.max(r.d,1-r.d);
+    return`<div class="chip ${side}${p>=WIN?" lock":""}" title="${esc(k)}"><b>${esc(k)}</b>${star?"★":""}<span class="who">${esc(who)}</span><span class="od">${side} ${pct(p)}${p>=WIN?" ✓":""}</span></div>`};
+  const testChip=t=>{const g=gopTest(t);
+    const od=t.seats.length===1?(g.withMkt?`GOP ${pct(1-houseRace(t.seats[0]).d)} to win · margin not tracked`:"No market"):`GOP favored in ${g.fav} of ${t.seats.length}`;
+    return`<div class="chip test${g.pass?" pass":""}"><b>${esc(t.label)}</b><span class="od">${esc(od)}</span></div>`};
+  const nextRow=L.house.map(r=>r.at).find(a=>a>h);
+  let g=`<div></div>${L.tiers.map(t=>{const c=hv.T[t.id];return`<div class="colh ${t.id}">${esc(t.name)}<small>${esc(t.house)}</small><span class="cnt">${t.id==="riptide"?"GOP":"Dems"} ahead ${c.fav}/${c.withMkt}</span></div>`}).join("")}`;
+  for(const row of L.house){
+    g+=`<div class="rowh${h>=row.at?" closed":""}${live&&row.at===nextRow?" nextup":""}"><b>${fmtClock(row.at)}</b>${esc(row.states)}</div>`;
+    for(const t of L.tiers){
+      const tests=t.id==="riptide"?L.gopTests.filter(x=>x.at===row.at):[];
+      const items=row[t.id].map(chip).join("")+tests.map(testChip).join("");
+      g+=`<div class="cell ${t.id}${items?"":" empty"}" data-tier="${esc(t.name)}">${items}</div>`;
+    }
+  }
+  $("hgrid").innerHTML=g;
+
+  // Senate table
+  let s=`<div class="srow head"><span>Close</span><span>Race</span><span>Odds</span><span>Market margin</span><span class="scs">${L.tiers.map(t=>`<span class="sc">${esc(t.name)}</span>`).join("")}</span></div>`;
+  for(const x of L.senate){
+    const r=senR(x.st),m=margins.get("senate-"+x.st),col=columnFor(x.ranges,m);
+    let odds="–",cls="";
+    if(r){const dSide=x.ind?"I":"D",side=r.d>=0.5?dSide:"R",p=Math.max(r.d,1-r.d),who=side==="R"?x.r:x.d;cls=side;
+      odds=`${esc(who)} ${pct(p)}${p>=WIN?`<span class="lockmark ${side}">✓</span>`:""}`}
+    const mov=m!=null?`${esc(who(m,x.d,x.r))}<small>${x.rcp!=null?`polls: ${esc(who(x.rcp,x.d,x.r))}`:"middle of market"}</small>`:`–<small>no margin market</small>`;
+    s+=`<div class="srow"><span class="st-when">${fmtClock(x.at)}</span>
+      <span class="st-name"><b>${esc(Core.STATES[x.st])}</b><span>${esc(x.r)} (R) v. ${esc(x.d)} (${x.ind?"I":"D"})</span></span>
+      <span class="st-odds ${cls}">${odds}</span><span class="st-mov">${mov}</span>
+      <span class="scs">${x.ranges.map((rg,i)=>`<span class="sc ${L.tiers[i].id}${i===col?" on":""}">${esc(rg)}</span>`).join("")}</span></div>`;
+  }
+  $("senate").innerHTML=s;
+  $("stally").innerHTML=`Margin markets point to: ${L.tiers.map((t,i)=>`${esc(t.name)} <b>${sv.cols[i]}</b>`).join(" · ")}. The highlighted box is where the middle of each race's margin market falls; races without one show odds only.`;
+
+  // Keys
+  $("keys").innerHTML=L.keys.map(k=>{
+    const fn=k.check&&CHECKS[k.check],res=fn?fn():null,started=live&&h>=k.at;
+    let pill;
+    if(!k.side)pill="";
+    else if(!fn)pill=`<span class="pill watch">Watch<small>needs vote counts</small></span>`;
+    else if(!res)pill=`<span class="pill watch">No market</span>`;
+    else if(!started)pill=`<span class="pill wait">${res.yes?"Yes":"No"} now<small>${esc(res.now)}</small></span>`;
+    else pill=`<span class="pill ${res.yes?"yes"+(k.side||"D"):"no"}">${res.yes?"Yes":"No"}<small>${esc(res.now)}</small></span>`;
+    const when=k.until?`${fmtClock(k.at)}–${fmtClock(k.until)}`:k.at>=24?fmtClock(k.at):fmtClock(k.at);
+    return`<div class="krow"><span class="k-when">${esc(when)}</span><span class="k-text"><b>${esc(k.text)}</b>${k.means?`<span>→ ${esc(k.means)}</span>`:""}</span>${pill}</div>`}).join("");
+
+  $("foot").innerHTML=`${esc(L.notes)} 92% or better counts as won. House tiers: a tier is reached when Democrats are ahead in at least half of its races (and in every tier below it). Senate tiers come from net seats if every favorite wins. Chart sources: DDHQ, Chuck Todd, Karl Rove, WSJ, Cook Political Report, 270toWin; ranges are judgment benchmarks, not modeled odds.`;
+}
+function renderStatus(err){
+  const t=lastAt?new Date(lastAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"}):null;
+  $("status").innerHTML=(t?`Updated <b>${t}</b> · refreshes every minute`:"")+(err?` <span class="err">Couldn't load the latest odds (${esc(err)}). Will try again.</span>`:"");
+}
+async function refresh(){
+  if(busy)return;busy=true;$("refresh").disabled=true;$("refresh").textContent="Updating…";
+  try{
+    const r=await fetch("/api/snapshot",{headers:{accept:"application/json"}});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const j=await r.json();if(!Array.isArray(j.races)||!j.races.length)throw new Error("empty");
+    ingest(j);lastAt=clockNow();store.set("et.look.snap",{at:lastAt,j:{races:j.races,seats:j.seats,margins:j.margins}});
+    render();renderStatus();
+  }catch(e){renderStatus(e.message)}
+  finally{busy=false;$("refresh").disabled=false;$("refresh").textContent="Refresh"}
+}
+$("refresh").addEventListener("click",refresh);
+// Show the last copy instantly, then fetch fresh odds; refresh every minute while the page is open
+const saved=store.get("et.look.snap",null);
+if(saved&&saved.j&&clockNow()-saved.at<72*3600e3){ingest(saved.j);lastAt=saved.at;render();renderStatus()}
+refresh();
+setInterval(()=>{if(!document.hidden)refresh()},60e3);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&clockNow()-(lastAt||0)>30e3)refresh()});
+</script>
+</body>
+</html>

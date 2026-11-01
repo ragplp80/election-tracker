@@ -13,10 +13,10 @@ module.exports = async (req, res) => {
     const t2 = Date.now();
     // Timings for diagnosing slow refreshes (printed by the keep-warm job)
     res.setHeader("Server-Timing", `catalog;dur=${t1 - t0}, prices;dur=${t2 - t1}`);
-    res.setHeader("X-Tracker-Stats", JSON.stringify({ mode: fresh.mode, races: cat.races.length, ...fresh.stats }));
+    res.setHeader("X-Tracker-Stats", JSON.stringify({ mode: fresh.mode, races: cat.races.length, margins: (fresh.margins || []).length, ...fresh.stats }));
     const races = fresh.races.flatMap((r) => r.events.map((ev) => ({ meta: r.meta, ev })));
     res.setHeader("Cache-Control", "public, s-maxage=15, stale-while-revalidate=30");
-    res.status(200).json({ at: Date.now(), catalogAt: cat.at, mode: fresh.mode, races, seats: fresh.seats || null, coverage: cat.coverage || null });
+    res.status(200).json({ at: Date.now(), catalogAt: cat.at, mode: fresh.mode, races, seats: fresh.seats || null, margins: fresh.margins || [], coverage: cat.coverage || null });
   } catch (e) {
     res.setHeader("Cache-Control", "no-store");
     res.status(502).json({ error: String(e.message || e) });

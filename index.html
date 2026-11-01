@@ -63,6 +63,10 @@ h1 small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color
   .toggle .lbl-long{display:none}
 }
 
+/* Link to the scenario page */
+.pagelink{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0 10px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-weight:700;font-size:13px;text-decoration:none;color:var(--fg)}
+.pagelink span{color:var(--muted)}
+
 /* Control strip */
 .strip{display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:12px;margin:4px 0 14px}
 .ctl{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:8px;min-width:0}
@@ -313,6 +317,8 @@ footer a{color:var(--muted)}
   <div class="progress"><i id="prog"></i></div>
 </header>
 
+<a class="pagelink" href="looking.html">How we looking: the early-tells scenario tracker <span>→</span></a>
+
 <section class="strip">
   <div class="ctl" id="ctlS"><h2>Senate control</h2><div class="empty" style="padding:8px">Loading…</div></div>
   <div class="ctl" id="ctlH"><h2>House control</h2><div class="empty" style="padding:8px">Loading…</div></div>
@@ -411,14 +417,12 @@ footer a{color:var(--muted)}
 <script>
 "use strict";
 // ---------- Reference data ----------
-const {STATES,classify,is2026,seatKey,isSeat,eventMeta}=Core;
+const {STATES,classify,is2026,seatKey,isSeat,eventMeta,priceOf,dProbOf,parseSeatMarket,seatStats,HELD_SEN,HELD_GOV}=Core;
 // 2024 presidential margin by state, Trump minus Harris, percentage points (rounded).
 const TRUMP24={AL:30.5,AK:13.1,AZ:5.5,AR:30.6,CA:-20.1,CO:-11.0,CT:-14.5,DE:-14.7,FL:13.1,GA:2.2,HI:-23.1,ID:36.5,IL:-10.9,IN:19.0,IA:13.2,KS:16.1,KY:30.5,LA:22.0,ME:-6.9,MD:-28.5,MA:-25.2,MI:1.4,MN:-4.2,MS:22.9,MO:18.4,MT:19.9,NE:20.4,NV:3.1,NH:-2.8,NJ:-5.9,NM:-6.0,NY:-12.6,NC:3.2,ND:36.5,OH:11.2,OK:34.3,OR:-14.3,PA:1.7,RI:-13.8,SC:17.8,SD:29.2,TN:29.7,TX:13.7,UT:21.6,VT:-32.3,VA:-5.8,WA:-18.2,WV:41.9,WI:0.9,WY:45.8};
 // When most of each state's polls close, Eastern time on election night (hours after midnight; 24+ = next day).
 const POLLS={IN:18,KY:18,GA:19,SC:19,VA:19,VT:19,FL:19,NC:19.5,OH:19.5,WV:19.5,AL:20,CT:20,DE:20,IL:20,ME:20,MD:20,MA:20,MI:20,MS:20,MO:20,NH:20,NJ:20,OK:20,PA:20,RI:20,TN:20,TX:20,KS:20,SD:20,AR:20.5,AZ:21,CO:21,LA:21,MN:21,NE:21,NM:21,NY:21,ND:21,WI:21,WY:21,IA:21,MT:22,NV:22,UT:22,ID:22,OR:23,CA:23,WA:23,HI:24,AK:25};
 // Party holding each seat going into the 2026 election.
-const HELD_SEN={AL:"R",AK:"R",AR:"R",CO:"D",DE:"D",FL:"R",GA:"D",ID:"R",IL:"D",IA:"R",KS:"R",KY:"R",LA:"R",ME:"R",MA:"D",MI:"D",MN:"D",MS:"R",MT:"R",NE:"R",NH:"D",NJ:"D",NM:"D",NC:"R",OH:"R",OK:"R",OR:"D",RI:"D",SC:"R",SD:"R",TN:"R",TX:"R",VA:"D",WV:"R",WY:"R"};
-const HELD_GOV={AL:"R",AK:"R",AZ:"D",AR:"R",CA:"D",CO:"D",CT:"D",FL:"R",GA:"R",HI:"D",ID:"R",IL:"D",IA:"R",KS:"D",ME:"D",MD:"D",MA:"D",MI:"D",MN:"D",NE:"R",NV:"R",NH:"R",NM:"D",NY:"D",OH:"R",OK:"R",OR:"D",PA:"D",RI:"D",SC:"R",SD:"R",TN:"R",TX:"R",VT:"R",WI:"D",WY:"R"};
 // House: 2024 presidential margins and 2024 winners by district, and which states redrew (house2024.js).
 const REDRAWN=new Set(HOUSE2024.redrawn);
 // Election night: the feed goes live at 5pm ET, the daily baseline moves to 6pm ET (just before the
@@ -498,42 +502,10 @@ async function discover(onProgress){
 }
 
 // ---------- Turning Kalshi events into races ----------
-function partyOf(m){
-  // Kalshi tags parties several ways: SENATETX-26-D, KXHOUSENC11-26-DEM / -GOP, or only in the label.
-  const suf=(m.ticker||"").split("-").pop().toUpperCase();
-  const lab=`${m.yes_sub_title||""} ${m.subtitle||""}`;
-  if(["D","DEM","DEMS"].includes(suf)||/democrat/i.test(lab))return"D";
-  if(["R","REP","GOP"].includes(suf)||/republican/i.test(lab))return"R";
-  if(["I","IND"].includes(suf)||/independent/i.test(lab))return"I";
-  return"X";
-}
-function priceOf(m,prev){
-  if(prev)return num(m.previous_price_dollars);
-  const bid=num(m.yes_bid_dollars),ask=num(m.yes_ask_dollars),last=num(m.last_price_dollars);
-  if(bid&&ask&&ask-bid<=0.1)return(bid+ask)/2;
-  return last??bid??ask;
-}
-function dProbOf(outs,key){
-  const d=outs.find(o=>o.party==="D"),r=outs.find(o=>o.party==="R");
-  const pd=d?.[key],pr=r?.[key];
-  if(pd!=null&&pr!=null&&pd+pr>0)return pd/(pd+pr);
-  if(pd!=null)return pd; if(pr!=null)return 1-pr;
-  return null;
-}
 function buildRace(meta,ev){
   if(!is2026(meta,ev))return null;
-  const outs=(ev.markets||[]).filter(m=>m.status!=="finalized").map(m=>({
-    ticker:m.ticker,party:partyOf(m),
-    name:(m.yes_sub_title||m.subtitle||m.ticker).replace(/ Party$/,""),
-    p:priceOf(m),p24:priceOf(m,true),vol24:num(m.volume_24h_fp)??0,vol:num(m.volume_fp)??0
-  })).filter(o=>o.p!=null);
-  if(!outs.length)return null;
-  outs.sort((a,b)=>b.p-a.p);
-  // A strong independent (5%+, e.g. Dan Osborn in Nebraska) makes it a three-way race:
-  // then the tracked number is the chance the Republican loses, out of all candidates.
-  const multi=outs.some(o=>(o.party==="I"||o.party==="X")&&o.p>=0.05)&&outs.some(o=>o.party==="R");
-  const notR=key=>{const tot=outs.reduce((s,o)=>s+(o[key]??0),0),r=outs.find(o=>o.party==="R")?.[key];return tot>0&&r!=null?1-r/tot:null};
-  const d=multi?notR("p"):dProbOf(outs,"p"),d24=multi?notR("p24"):dProbOf(outs,"p24");
+  const odds=Core.raceOdds(ev);if(!odds)return null;
+  const {outs,multi,d,d24}=odds;
   const st=meta.st;
   let label,sub;
   if(meta.type==="senate"){label=STATES[st];sub=meta.special?"Senate special":"Senate"}
@@ -672,34 +644,6 @@ function pickRaces(){
 // ---------- Balance of power ----------
 const SEN_NOT_UP={D:34,R:31};   // seats not on the ballot in 2026 (D includes King and Sanders)
 function band(p){return p>=0.9?"safe":p>=0.75?"lik":p>=0.6?"lean":"toss"}
-function parseSeatMarket(j){
-  const ev=(j.events||[]).find(e=>/-27$/.test(e.event_ticker))||(j.events||[])[0];
-  if(!ev)return null;
-  const buckets=[];
-  for(const m of ev.markets||[]){
-    const lab=m.yes_sub_title||m.subtitle||"";
-    let lo=null,hi=null,x;
-    if((x=lab.match(/(\d{3})\s*[-–]\s*(\d{3})/))){lo=+x[1];hi=+x[2]}
-    else if((x=lab.match(/(below|under|fewer than|less than)\s*(\d{3})/i))){hi=+x[2]-1;lo=hi-3}
-    else if((x=lab.match(/(above|over|more than)\s*(\d{3})/i))){lo=+x[2]+1;hi=lo+3}
-    else if((x=lab.match(/(\d{3})\s*\+|(\d{3}) or more/i))){lo=+(x[1]||x[2]);hi=lo+3}
-    else if(num(m.floor_strike)!=null||num(m.cap_strike)!=null){lo=num(m.floor_strike)??num(m.cap_strike)-3;hi=num(m.cap_strike)??lo+3}
-    const p=priceOf(m);
-    if(lo==null||p==null)continue;
-    buckets.push({lo,hi,mid:(lo+hi)/2,p,label:lab,ticker:m.ticker});
-  }
-  if(buckets.length<3)return null;
-  buckets.sort((a,b)=>a.mid-b.mid);
-  return{buckets,id:ev.event_ticker};
-}
-function seatStats(hs){
-  const tot=hs.buckets.reduce((s,b)=>s+b.p,0);if(!tot)return null;
-  const ps=hs.buckets.map(b=>({...b,q:b.p/tot}));
-  const mean=ps.reduce((s,b)=>s+b.mid*b.q,0);
-  const pct=t=>{let c=0;for(const b of ps){if(c+b.q>=t){const f=(t-c)/b.q;return b.lo+f*(b.hi-b.lo+1)}c+=b.q}return ps[ps.length-1].hi};
-  const pMaj=ps.reduce((s,b)=>s+(b.mid>=218?b.q:0),0);
-  return{mean,median:pct(0.5),p10:pct(0.1),p90:pct(0.9),pMaj};
-}
 function renderBalance(list,ctlH){
   // ----- Senate (one race per state: no state has two Senate seats up in 2026)
   const byState=new Map(list.filter(r=>r.type==="senate").map(r=>[r.st,r]));

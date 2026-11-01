@@ -130,7 +130,7 @@ function loadPage(opts = {}) {
   const kalshi = fakeKalshi(board, log);
   const snapshotHandler = require(path.join(ROOT, "api/snapshot.js"));
   const errors = [];
-  let html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  let html = fs.readFileSync(path.join(ROOT, opts.file || "index.html"), "utf8");
   // Inline the page's own script files (core.js, house2024.js, ...)
   html = html.replace(/<script src="([\w.-]+\.js)"><\/script>/g, (_, f) => `<script>${fs.readFileSync(path.join(ROOT, f), "utf8")}</script>`);
 

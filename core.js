@@ -106,7 +106,84 @@
     return !SIDE_BET.test(title || "") && !FOREIGN.test(title || "");
   }
 
-  const Core = { STATES, SEATS2026, classify, eventMeta, seatKey, seriesKey, isSeat, eventVolume, is2026, slimMarket, slimEvent, untrackedRace };
+  // ---------- Odds from an event's markets (shared by the main page and How We Looking) ----------
+  const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+  // Kalshi tags parties several ways: SENATETX-26-D, KXHOUSENC11-26-DEM / -GOP, or only in the label.
+  function partyOf(m) {
+    const suf = (m.ticker || "").split("-").pop().toUpperCase();
+    const lab = `${m.yes_sub_title || ""} ${m.subtitle || ""}`;
+    if (["D", "DEM", "DEMS"].includes(suf) || /democrat/i.test(lab)) return "D";
+    if (["R", "REP", "GOP"].includes(suf) || /republican/i.test(lab)) return "R";
+    if (["I", "IND"].includes(suf) || /independent/i.test(lab)) return "I";
+    return "X";
+  }
+  // Midpoint when the spread is tight, otherwise the last trade. prev: yesterday's price.
+  function priceOf(m, prev) {
+    if (prev) return num(m.previous_price_dollars);
+    const bid = num(m.yes_bid_dollars), ask = num(m.yes_ask_dollars), last = num(m.last_price_dollars);
+    if (bid && ask && ask - bid <= 0.1) return (bid + ask) / 2;
+    return last ?? bid ?? ask;
+  }
+  function dProbOf(outs, key) {
+    const d = outs.find((o) => o.party === "D"), r = outs.find((o) => o.party === "R");
+    const pd = d?.[key], pr = r?.[key];
+    if (pd != null && pr != null && pd + pr > 0) return pd / (pd + pr);
+    if (pd != null) return pd; if (pr != null) return 1 - pr;
+    return null;
+  }
+  // Outcomes sorted by chance, whether it's a three-way race, and the tracked number d: the
+  // Democrat's chance, or in a three-way race (a strong independent, 5%+, e.g. Dan Osborn in
+  // Nebraska) the chance the Republican loses, out of all candidates.
+  function raceOdds(ev) {
+    const outs = (ev.markets || []).filter((m) => m.status !== "finalized").map((m) => ({
+      ticker: m.ticker, party: partyOf(m),
+      name: (m.yes_sub_title || m.subtitle || m.ticker).replace(/ Party$/, ""),
+      p: priceOf(m), p24: priceOf(m, true), vol24: num(m.volume_24h_fp) ?? 0, vol: num(m.volume_fp) ?? 0,
+    })).filter((o) => o.p != null);
+    if (!outs.length) return null;
+    outs.sort((a, b) => b.p - a.p);
+    const multi = outs.some((o) => (o.party === "I" || o.party === "X") && o.p >= 0.05) && outs.some((o) => o.party === "R");
+    const notR = (key) => { const tot = outs.reduce((s, o) => s + (o[key] ?? 0), 0), r = outs.find((o) => o.party === "R")?.[key]; return tot > 0 && r != null ? 1 - r / tot : null; };
+    return { outs, multi, d: multi ? notR("p") : dProbOf(outs, "p"), d24: multi ? notR("p24") : dProbOf(outs, "p24") };
+  }
+
+  // Who held each seat before this election
+  const HELD_SEN = {AL:"R",AK:"R",AR:"R",CO:"D",DE:"D",FL:"R",GA:"D",ID:"R",IL:"D",IA:"R",KS:"R",KY:"R",LA:"R",ME:"R",MA:"D",MI:"D",MN:"D",MS:"R",MT:"R",NE:"R",NH:"D",NJ:"D",NM:"D",NC:"R",OH:"R",OK:"R",OR:"D",RI:"D",SC:"R",SD:"R",TN:"R",TX:"R",VA:"D",WV:"R",WY:"R"};
+  const HELD_GOV = {AL:"R",AK:"R",AZ:"D",AR:"R",CA:"D",CO:"D",CT:"D",FL:"R",GA:"R",HI:"D",ID:"R",IL:"D",IA:"R",KS:"D",ME:"D",MD:"D",MA:"D",MI:"D",MN:"D",NE:"R",NV:"R",NH:"R",NM:"D",NY:"D",OH:"R",OK:"R",OR:"D",PA:"D",RI:"D",SC:"R",SD:"R",TN:"R",TX:"R",VT:"R",WI:"D",WY:"R"};
+
+  // House seat-count market (KXDHOUSESEATS): buckets like "238-241" with their chances
+  function parseSeatMarket(j) {
+    const ev = (j.events || []).find((e) => /-27$/.test(e.event_ticker)) || (j.events || [])[0];
+    if (!ev) return null;
+    const buckets = [];
+    for (const m of ev.markets || []) {
+      const lab = m.yes_sub_title || m.subtitle || "";
+      let lo = null, hi = null, x;
+      if ((x = lab.match(/(\d{3})\s*[-–]\s*(\d{3})/))) { lo = +x[1]; hi = +x[2]; }
+      else if ((x = lab.match(/(below|under|fewer than|less than)\s*(\d{3})/i))) { hi = +x[2] - 1; lo = hi - 3; }
+      else if ((x = lab.match(/(above|over|more than)\s*(\d{3})/i))) { lo = +x[2] + 1; hi = lo + 3; }
+      else if ((x = lab.match(/(\d{3})\s*\+|(\d{3}) or more/i))) { lo = +(x[1] || x[2]); hi = lo + 3; }
+      else if (num(m.floor_strike) != null || num(m.cap_strike) != null) { lo = num(m.floor_strike) ?? num(m.cap_strike) - 3; hi = num(m.cap_strike) ?? lo + 3; }
+      const p = priceOf(m);
+      if (lo == null || p == null) continue;
+      buckets.push({ lo, hi, mid: (lo + hi) / 2, p, label: lab, ticker: m.ticker });
+    }
+    if (buckets.length < 3) return null;
+    buckets.sort((a, b) => a.mid - b.mid);
+    return { buckets, id: ev.event_ticker };
+  }
+  // Expected seats, the middle, the 10th-90th percentile range, and the chance of a majority (218+)
+  function seatStats(hs) {
+    const tot = hs.buckets.reduce((s, b) => s + b.p, 0); if (!tot) return null;
+    const ps = hs.buckets.map((b) => ({ ...b, q: b.p / tot }));
+    const mean = ps.reduce((s, b) => s + b.mid * b.q, 0);
+    const pct = (t) => { let c = 0; for (const b of ps) { if (c + b.q >= t) { const f = (t - c) / b.q; return b.lo + f * (b.hi - b.lo + 1); } c += b.q; } return ps[ps.length - 1].hi; };
+    const pMaj = ps.reduce((s, b) => s + (b.mid >= 218 ? b.q : 0), 0);
+    return { mean, median: pct(0.5), p10: pct(0.1), p90: pct(0.9), pMaj };
+  }
+
+  const Core = { STATES, SEATS2026, classify, eventMeta, seatKey, seriesKey, isSeat, eventVolume, is2026, slimMarket, slimEvent, untrackedRace,
+    partyOf, priceOf, dProbOf, raceOdds, parseSeatMarket, seatStats, HELD_SEN, HELD_GOV };
   if (typeof module === "object" && module.exports) module.exports = Core;
   else root.Core = Core;
 })(typeof window !== "undefined" ? window : globalThis);
