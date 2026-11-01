@@ -60,6 +60,24 @@ test("prices: falls back to per-race lookups when a batch comes back short", asy
   } finally { restore(); }
 });
 
+test("prices: a race the batch missed is re-read on its own; the rest keep batched prices", async () => {
+  const board = defaultBoard();
+  const log = [];
+  const restore = useFakeKalshi(board, log);
+  try {
+    const cat = await lib.buildCatalog();
+    const tx = cat.races.find((r) => r.meta.series === "SENATETX");
+    tx.events[0].markets.push({ ticker: "SENATETX-26-GONE", status: "active" });   // Kalshi no longer lists it
+    log.length = 0;
+    const fresh = await lib.refreshPrices(cat);
+    assert.equal(fresh.mode, "sweep");
+    assert.equal(fresh.stats.swept, 1);
+    const reads = log.filter((l) => l.startsWith("/events"));
+    assert.deepEqual(reads.map((l) => new URLSearchParams(l.split("?")[1]).get("series_ticker")), ["SENATETX"], "only Texas re-read");
+    assert.equal(fresh.races.length, cat.races.length);
+  } finally { restore(); }
+});
+
 test("snapshot endpoint: one response with every race, shared for 15 seconds", withBoard(defaultBoard(), async () => {
   const res = await callHandler(require("../api/snapshot.js"));
   assert.equal(res.statusCode, 200);

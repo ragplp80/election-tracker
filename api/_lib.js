@@ -93,43 +93,52 @@ function coverageOf(races, untracked) {
   return { senate: part(S.senate, "senate"), gov: part(S.gov, "gov"), house: part(houseKeys, "house"), untracked };
 }
 
-// Fresh prices for a catalog: a few batched calls by ticker; if a batch comes back short,
-// re-read each race's events instead.
-async function refreshPrices(cat) {
+// Fresh prices for a catalog: a few batched calls by ticker. Races the batch didn't fully cover
+// (Kalshi had a hiccup, or a market closed) are re-read one series at a time; the rest keep the
+// batched prices, so one short batch no longer means re-reading every race.
+async function refreshPrices(cat, { chunk = 100 } = {}) {
   const all = [...cat.races.flatMap((r) => r.events), ...(cat.seats ? [cat.seats] : [])];
   const tickers = all.flatMap((ev) => ev.markets.filter((m) => m.status !== "finalized").map((m) => m.ticker));
   const chunks = [];
-  for (let i = 0; i < tickers.length; i += 40) chunks.push(tickers.slice(i, i + 40));
+  for (let i = 0; i < tickers.length; i += chunk) chunks.push(tickers.slice(i, i + chunk));
   const res = await pool(chunks, 4, (c) => kget(`/markets?tickers=${c.join(",")}&limit=1000`));
   const fresh = new Map();
-  let errs = 0;
   for (const r of res) {
-    if (!r || r.error) { errs++; continue; }
+    if (!r || r.error) continue;
     for (const m of r.markets || []) fresh.set(m.ticker, Core.slimMarket(m));
   }
   const swap = (ev) => ({ event_ticker: ev.event_ticker, markets: ev.markets.map((m) => fresh.get(m.ticker) || m) });
-  if (!errs && fresh.size >= tickers.length * 0.9) {
-    return { mode: "batch", races: cat.races.map((r) => ({ meta: r.meta, events: r.events.map(swap) })), seats: cat.seats && swap(cat.seats) };
+  const covered = (ev) => ev.markets.every((m) => m.status === "finalized" || fresh.has(m.ticker));
+  const short = cat.races.filter((r) => !r.events.every(covered));
+  const stats = { tickers: tickers.length, calls: chunks.length, swept: short.length };
+  if (!short.length) {
+    return { mode: "batch", stats, races: cat.races.map((r) => ({ meta: r.meta, events: r.events.map(swap) })), seats: cat.seats && swap(cat.seats) };
   }
-  // Fallback: one call per series (a multi-district series is read once and split by event)
+  // Re-read the races the batch missed, one call per series (a multi-district series is read once
+  // and split by event)
   const bySeries = new Map();
   const read = (series) => {
     if (!bySeries.has(series)) bySeries.set(series, kget(`/events?series_ticker=${series}&status=open&with_nested_markets=true`));
     return bySeries.get(series);
   };
+  const shortSet = new Set(short);
   const swept = await pool(cat.races, 8, async (r) => {
+    if (!shortSet.has(r)) return { meta: r.meta, events: r.events.map(swap) };
     const e = await read(r.meta.series);
     const mine = new Set(r.events.map((ev) => ev.event_ticker));
     const evs = (e.events || []).filter((ev) => mine.has(ev.event_ticker));   // the seat's own event only
     return { meta: r.meta, events: evs.map(Core.slimEvent) };
   });
-  let seats = cat.seats;
-  try {
-    const s = await kget(`/events?series_ticker=KXDHOUSESEATS&status=open&with_nested_markets=true`);
-    const ev = (s.events || []).find((x) => /-27$/.test(x.event_ticker));
-    if (ev) seats = Core.slimEvent(ev);
-  } catch (e) {}
-  return { mode: "sweep", races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats };
+  let seats = cat.seats && swap(cat.seats);
+  if (cat.seats && !covered(cat.seats)) {
+    try {
+      const s = await kget(`/events?series_ticker=KXDHOUSESEATS&status=open&with_nested_markets=true`);
+      const ev = (s.events || []).find((x) => /-27$/.test(x.event_ticker));
+      if (ev) seats = Core.slimEvent(ev);
+    } catch (e) {}
+  }
+  stats.series = bySeries.size;
+  return { mode: "sweep", stats, races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats };
 }
 
 module.exports = { kget, pool, buildCatalog, refreshPrices, coverageOf, KALSHI };

@@ -14,5 +14,6 @@ jobs:
       - name: Race list and prices
         run: |
           for path in api/catalog api/snapshot; do
-            curl -sS -o /dev/null --max-time 300 -w "$path %{http_code} %{time_total}s\n" "https://election-tracker-indol.vercel.app/$path" || true
+            curl -sS -o /dev/null -D headers.txt --max-time 300 -w "$path %{http_code} %{time_total}s\n" "https://election-tracker-indol.vercel.app/$path" || true
+            grep -iE '^(x-vercel-cache|server-timing|x-tracker-stats|age):' headers.txt || true
           done
