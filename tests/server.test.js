@@ -155,6 +155,22 @@ test("catalog: a series with more events than one page holds is read to the end"
   } finally { restore(); }
 });
 
+test("prices: a refused batch is retried in halves before any race is re-read", async () => {
+  const board = defaultBoard();
+  const log = [];
+  const restore = useFakeKalshi(board, log);
+  try {
+    const cat = await lib.buildCatalog();
+    let refused = 0;
+    board.fail = (p, u) => p === "/markets" && (u.searchParams.get("tickers") || "").split(",").length > 20 && refused++ < 10;
+    board.failStatus = 429;
+    log.length = 0;
+    const fresh = await lib.refreshPrices(cat, { chunk: 40 });
+    assert.equal(fresh.mode, "batch", "halves got every price");
+    assert.ok(!log.some((l) => l.startsWith("/events")), "no race re-read");
+  } finally { restore(); }
+});
+
 test("relay: passes allowed read-only paths, refuses others", withBoard(defaultBoard(), async () => {
   const relay = require("../api/kalshi.js");
   const ok = await callHandler(relay, { path: "/events?series_ticker=SENATETX&with_nested_markets=true" });

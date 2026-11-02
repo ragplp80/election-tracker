@@ -166,7 +166,21 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
   const tickers = all.flatMap((ev) => ev.markets.filter((m) => m.status !== "finalized").map((m) => m.ticker));
   const chunks = [];
   for (let i = 0; i < tickers.length; i += chunk) chunks.push(tickers.slice(i, i + chunk));
-  const res = await pool(chunks, 4, (c) => kget(`/markets?tickers=${c.join(",")}&limit=1000`));
+  const batch = (c) => kget(`/markets?tickers=${c.join(",")}&limit=1000`);
+  const res = await pool(chunks, 4, batch);
+  // A batch Kalshi refused (too busy, or one bad ticker spoils the lot) is split in halves and
+  // retried one at a time, down to small pieces, before those races are re-read series by series.
+  const split = async (c) => {
+    try { return (await batch(c)).markets || []; }
+    catch (e) {
+      if (c.length <= 6) return [];
+      const half = Math.ceil(c.length / 2);
+      return [...(await split(c.slice(0, half))), ...(await split(c.slice(half)))];
+    }
+  };
+  for (let i = 0; i < res.length; i++) {
+    if (res[i] && res[i].error) res[i] = { markets: await split(chunks[i]) };
+  }
   const fresh = new Map();
   for (const r of res) {
     if (!r || r.error) continue;
