@@ -110,3 +110,14 @@ test("How We Looking: tapping a race opens the live tracker's chart over the pag
   chip.click();
   assert.match(pg.d.getElementById("raceFrame").getAttribute("src"), /race=HOUSEPA8-26/);
 });
+
+test("How We Looking: Florida ladder climbs only while every rung below is favored", async (t) => {
+  const b = board();
+  const set = (k, p) => { b.events["HOUSE" + k] = [twoParty(`HOUSE${k}-26`, "D", "R", p)]; };
+  set("FL25", 0.8); set("FL14", 0.75); set("FL22", 0.7); set("FL9", 0.6); set("FL27", 0.4); set("FL12", 0.55); set("FL16", 0.6);
+  const pg = page(t, { board: b, now: Date.parse("2026-11-01T20:00:00Z") });
+  await ready(pg);
+  assert.match(pg.text("#ladder .lsum"), /rung 2: Wide eyes/, "FL-27 not favored stops the climb, even though rung 4 is");
+  assert.equal(pg.d.querySelectorAll("#ladder .lrung.on").length, 2);
+  assert.ok(pg.d.querySelector('#ladder .chip[data-open="HOUSEFL12-26"]'), "districts open their charts");
+});

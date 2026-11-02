@@ -123,6 +123,16 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
 .chip[data-open]:hover,.srow[data-open]:hover{filter:brightness(1.12)}
 .srow[data-open]:hover{background:color-mix(in srgb,var(--surface2) 70%,transparent)}
 .raceframe{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:50;background:transparent}
+/* Florida ladder */
+.lsum{font-size:13px;margin-bottom:8px}
+.lrung{display:grid;grid-template-columns:28px 120px minmax(0,1fr);gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.lnum{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:12px;background:var(--surface2);color:var(--muted)}
+.lrung.on .lnum{background:var(--dem);color:#fff}
+.llab{font-weight:700;font-size:13px}
+.lrung:not(.on) .llab{color:var(--muted)}
+.lchips{display:flex;flex-wrap:wrap;gap:5px}
+.lchips .chip .who:empty{display:none}
+@media (max-width:560px){.lrung{grid-template-columns:28px minmax(0,1fr)}.lchips{grid-column:2}}
 .foot{font-size:11.5px;color:var(--muted);margin:14px 0}
 
 /* Phones: the House grid becomes one block per closing time; Senate rows wrap to two lines */
@@ -185,6 +195,11 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
     <span><i style="border:1.5px dashed var(--rep)"></i>GOP test: red when the GOP clears it</span>
     <span>Tap a district for its chart.</span>
   </div>
+</section>
+
+<section class="card">
+  <h2>Florida ladder: how far up do Democrats get?</h2>
+  <div class="ladder" id="ladder"></div>
 </section>
 
 <section class="card">
@@ -425,6 +440,12 @@ function render(){
   }
   $("hgrid").innerHTML=g;
 
+  // Florida ladder
+  const fl=L.floridaLadder||[];let reached=-1;
+  for(let i=0;i<fl.length;i++){const ok=fl[i].seats.every(k=>{const r=houseRace(k);return r&&r.d>=0.5});if(ok&&reached===i-1)reached=i}
+  $("ladder").innerHTML=`<div class="lsum">${reached<0?"Democrats aren't favored in FL-25 yet: no reaction.":`Democrats favored through rung ${reached+1}: <b>${esc(fl[reached].label)}</b>`}</div>`
+    +fl.map((rg,i)=>`<div class="lrung${i<=reached?" on":""}"><span class="lnum">${i+1}</span><span class="llab">${esc(rg.label)}</span><span class="lchips">${rg.seats.map(k=>chip([k,""])).join("")}</span></div>`).join("");
+
   // Senate table
   let s=`<div class="srow head"><span>Close</span><span>Race</span><span>Odds</span><span>Market margin</span><span class="scs">${L.tiers.map(t=>`<span class="sc">${esc(t.name)}</span>`).join("")}</span></div>`;
   for(const x of L.senate){
@@ -482,7 +503,7 @@ function openRace(id){
 }
 function closeRace(){const f=$("raceFrame");if(f)f.remove();document.body.style.overflow=""}
 window.addEventListener("message",e=>{if(e.origin===location.origin&&e.data&&e.data.type==="et-close-race")closeRace()});
-for(const id of ["hgrid","senate"]){
+for(const id of ["hgrid","senate","ladder"]){
   $(id).addEventListener("click",e=>{const el=e.target.closest("[data-open]");if(el)openRace(el.dataset.open)});
   $(id).addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const el=e.target.closest("[data-open]");if(el){e.preventDefault();openRace(el.dataset.open)}});
 }

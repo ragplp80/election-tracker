@@ -92,5 +92,13 @@ window.LOOKING = {
     { at: 23, text: "Polls close in Alaska", means: "" },
     { at: 27, text: "Senate control still unresolved", means: "GOP beat the polls, or Alaska/Maine pending", check: "senUnresolved", side: "R" },
   ],
+  // The Florida meme ladder: each rung is a bigger shock. A rung is reached when Democrats are
+  // favored in every district on it and on every rung below.
+  floridaLadder: [
+    { label: "Eyebrow raise", seats: ["FL-25"] },
+    { label: "Wide eyes", seats: ["FL-14", "FL-22"] },
+    { label: "Jaw drop", seats: ["FL-9", "FL-27"] },
+    { label: "Laser eyes", seats: ["FL-12", "FL-16"] },
+  ],
   notes: "Maine's ranked-choice count could take days; Alaska's ranked-choice tabulation doesn't start until Nov. 18.",
 };
