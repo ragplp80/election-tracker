@@ -1,11 +1,14 @@
-// Temporary (preview branch only): every open Elections event, compact, for a coverage sweep
-const { kget } = require("./_lib.js");
+// Temporary (preview branch only): which tickers the batched price call misses
+const { getCatalog, kget, pool } = require("./_lib.js");
 module.exports = async (req, res) => {
-  const out = []; let cursor = "", pages = 0;
-  do {
-    const j = await kget(`/events?status=open&limit=200${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
-    for (const e of j.events || []) if (e.category === "Elections" || e.category === "Politics") out.push([e.event_ticker, e.series_ticker, e.title, e.sub_title || ""]);
-    cursor = j.cursor || ""; pages++;
-  } while (cursor && pages < 80);
-  res.status(200).json({ pages, n: out.length, events: out });
+  const cat = await getCatalog();
+  const all = [...cat.races.flatMap((r) => r.events), ...(cat.margins || [])];
+  const ms = all.flatMap((ev) => ev.markets.map((m) => ({ t: m.ticker, s: m.status, ev: ev.event_ticker })));
+  const tickers = ms.filter((m) => m.s !== "finalized").map((m) => m.t);
+  const chunks = []; for (let i = 0; i < tickers.length; i += 100) chunks.push(tickers.slice(i, i + 100));
+  const got = new Set(); const sizes = [];
+  const res2 = await pool(chunks, 4, async (c) => { const j = await kget(`/markets?tickers=${c.join(",")}&limit=1000`); sizes.push([c.length, (j.markets || []).length, !!j.cursor]); for (const m of j.markets || []) got.add(m.ticker); return 1; });
+  const missing = ms.filter((m) => m.s !== "finalized" && !got.has(m.t));
+  const statuses = {}; for (const m of missing) statuses[m.s] = (statuses[m.s] || 0) + 1;
+  res.status(200).json({ tickers: tickers.length, got: got.size, sizes, statuses, sample: missing.slice(0, 40) });
 };
