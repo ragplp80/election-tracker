@@ -360,3 +360,17 @@ test("districts from the multi-district series show on the board (NC-3)", async 
     assert.match(row.textContent, /80% Greg Murphy/);
   }
 });
+
+test("embedded chart (?embed=1&race=...): opens that race's chart alone, and closing tells the page behind", async (t) => {
+  const pg = loadPage({ url: "https://tracker.test/?embed=1&race=SENATETX-26" });
+  t.after(() => pg.close());
+  const msgs = [];
+  pg.w.addEventListener("message", (e) => msgs.push(e.data));
+  await waitFor(() => pg.d.getElementById("sheetBg"), { what: "chart sheet", timeout: 15000 });
+  assert.match(pg.text("#sheetTitle"), /Texas/);
+  assert.ok(pg.d.documentElement.classList.contains("embed"), "everything but the chart hidden");
+  const lastSeen = pg.w.localStorage.getItem("et.lastSeen");
+  assert.equal(lastSeen, null, "opening a chart from another page isn't a look at the tracker");
+  pg.d.getElementById("sheetClose").click();
+  await waitFor(() => msgs.some((m) => m && m.type === "et-close-race"), { what: "close message" });
+});

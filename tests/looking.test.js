@@ -96,3 +96,17 @@ test("How We Looking: keys tick from the odds once their time comes", async (t) 
   assert.ok(!pg.d.querySelector("#preview:not([hidden])"), "no preview banner on election night");
   assert.deepEqual(pg.errors, []);
 });
+
+test("How We Looking: tapping a race opens the live tracker's chart over the page", async (t) => {
+  const pg = page(t, { now: Date.parse("2026-11-01T20:00:00Z") });
+  await ready(pg);
+  [...pg.d.querySelectorAll("#senate .srow")].find((r) => r.textContent.includes("Texas")).click();
+  const f = pg.d.getElementById("raceFrame");
+  assert.ok(f, "overlay opened");
+  assert.match(f.getAttribute("src"), /\?embed=1&race=SENATETX-26$/);
+  pg.w.dispatchEvent(new pg.w.MessageEvent("message", { data: { type: "et-close-race" }, origin: pg.w.location.origin }));
+  assert.ok(!pg.d.getElementById("raceFrame"), "closed when the chart closes");
+  const chip = [...pg.d.querySelectorAll("#hgrid .chip[data-open]")].find((c) => c.querySelector("b").textContent === "PA-8");
+  chip.click();
+  assert.match(pg.d.getElementById("raceFrame").getAttribute("src"), /race=HOUSEPA8-26/);
+});

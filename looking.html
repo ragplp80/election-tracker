@@ -119,6 +119,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
 .pill.no{background:var(--surface2);color:var(--muted)}
 .pill.wait{background:transparent;border:1px solid var(--line);color:var(--muted)}
 .pill.watch{background:transparent;color:var(--faint);border:1px dashed var(--line)}
+[data-open]{cursor:pointer}
+.chip[data-open]:hover,.srow[data-open]:hover{filter:brightness(1.12)}
+.srow[data-open]:hover{background:color-mix(in srgb,var(--surface2) 70%,transparent)}
+.raceframe{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:50;background:transparent}
 .foot{font-size:11.5px;color:var(--muted);margin:14px 0}
 
 /* Phones: the House grid becomes one block per closing time; Senate rows wrap to two lines */
@@ -179,6 +183,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
     <span><i style="background:color-mix(in srgb,var(--rep) 30%,var(--surface))"></i>Republican favored</span>
     <span><i style="background:var(--rep)"></i>Republican 92%+</span>
     <span><i style="border:1.5px dashed var(--rep)"></i>GOP test: red when the GOP clears it</span>
+    <span>Tap a district for its chart.</span>
   </div>
 </section>
 
@@ -227,7 +232,7 @@ function ingest(j){
   races=new Map();
   for(const {meta,ev} of j.races||[]){
     const o=Core.raceOdds(ev);if(!o||o.d==null)continue;
-    races.set(Core.seatKey(meta),{d:o.d,multi:o.multi,meta});
+    races.set(Core.seatKey(meta),{d:o.d,multi:o.multi,meta,id:ev.event_ticker});
   }
   seatStat=null;
   if(j.seats){const hs=Core.parseSeatMarket({events:[j.seats]});if(hs)seatStat=Core.seatStats(hs)}
@@ -404,7 +409,7 @@ function render(){
   const chip=([k,who,star])=>{const r=houseRace(k);
     if(!r)return`<div class="chip none"><b>${esc(k)}</b>${star?"★":""}<span class="who">${esc(who)}</span><span class="od">No market</span></div>`;
     const side=r.d>=0.5?"D":"R",p=Math.max(r.d,1-r.d);
-    return`<div class="chip ${side}${p>=WIN?" lock":""}" title="${esc(k)}"><b>${esc(k)}</b>${star?"★":""}<span class="who">${esc(who)}</span><span class="od">${side} ${pct(p)}${p>=WIN?" ✓":""}</span></div>`};
+    return`<div class="chip ${side}${p>=WIN?" lock":""}" data-open="${esc(r.id)}" role="button" tabindex="0" title="${esc(k)}: open the chart"><b>${esc(k)}</b>${star?"★":""}<span class="who">${esc(who)}</span><span class="od">${side} ${pct(p)}${p>=WIN?" ✓":""}</span></div>`};
   const testChip=t=>{const g=gopTest(t);
     const od=t.seats.length===1?(g.withMkt?`GOP ${pct(1-houseRace(t.seats[0]).d)} to win · margin not tracked`:"No market"):`GOP favored in ${g.fav} of ${t.seats.length}`;
     return`<div class="chip test${g.pass?" pass":""}"><b>${esc(t.label)}</b><span class="od">${esc(od)}</span></div>`};
@@ -428,13 +433,13 @@ function render(){
     if(r){const dSide=x.ind?"I":"D",side=r.d>=0.5?dSide:"R",p=Math.max(r.d,1-r.d),who=side==="R"?x.r:x.d;cls=side;
       odds=`${esc(who)} ${pct(p)}${p>=WIN?`<span class="lockmark ${side}">✓</span>`:""}`}
     const mov=m!=null?`${esc(who(m,x.d,x.r))}<small>${x.rcp!=null?`polls: ${esc(who(x.rcp,x.d,x.r))}`:"middle of market"}</small>`:`–<small>no margin market</small>`;
-    s+=`<div class="srow"><span class="st-when">${fmtClock(x.at)}</span>
+    s+=`<div class="srow"${r?` data-open="${esc(r.id)}" role="button" tabindex="0"`:""}><span class="st-when">${fmtClock(x.at)}</span>
       <span class="st-name"><b>${esc(Core.STATES[x.st])}</b><span>${esc(x.r)} (R) v. ${esc(x.d)} (${x.ind?"I":"D"})</span></span>
       <span class="st-odds ${cls}">${odds}</span><span class="st-mov">${mov}</span>
       <span class="scs">${x.ranges.map((rg,i)=>`<span class="sc ${L.tiers[i].id}${i===col?" on":""}">${esc(rg)}</span>`).join("")}</span></div>`;
   }
   $("senate").innerHTML=s;
-  $("stally").innerHTML=`Margin markets point to: ${L.tiers.map((t,i)=>`${esc(t.name)} <b>${sv.cols[i]}</b>`).join(" · ")}. The highlighted box is where the middle of each race's margin market falls; races without one show odds only.`;
+  $("stally").innerHTML=`Margin markets point to: ${L.tiers.map((t,i)=>`${esc(t.name)} <b>${sv.cols[i]}</b>`).join(" · ")}. The highlighted box is where the middle of each race's margin market falls; races without one show odds only. Tap a race for its chart.`;
 
   // Keys
   $("keys").innerHTML=L.keys.map(k=>{
@@ -466,6 +471,21 @@ async function refresh(){
   finally{busy=false;$("refresh").disabled=false;$("refresh").textContent="Refresh"}
 }
 $("refresh").addEventListener("click",refresh);
+
+// Tap a race: the live tracker's chart (price history, ranges, news) opens over this page.
+function openRace(id){
+  if(!id||$("raceFrame"))return;
+  const f=document.createElement("iframe");
+  f.id="raceFrame";f.className="raceframe";f.title="Race chart";
+  f.src="./?embed=1&race="+encodeURIComponent(id);
+  document.body.appendChild(f);document.body.style.overflow="hidden";
+}
+function closeRace(){const f=$("raceFrame");if(f)f.remove();document.body.style.overflow=""}
+window.addEventListener("message",e=>{if(e.origin===location.origin&&e.data&&e.data.type==="et-close-race")closeRace()});
+for(const id of ["hgrid","senate"]){
+  $(id).addEventListener("click",e=>{const el=e.target.closest("[data-open]");if(el)openRace(el.dataset.open)});
+  $(id).addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const el=e.target.closest("[data-open]");if(el){e.preventDefault();openRace(el.dataset.open)}});
+}
 // Show the last copy instantly, then fetch fresh odds; refresh every minute while the page is open
 const saved=store.get("et.look.snap",null);
 if(saved&&saved.j&&clockNow()-saved.at<72*3600e3){ingest(saved.j);lastAt=saved.at;render();renderStatus()}

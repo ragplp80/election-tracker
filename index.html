@@ -63,6 +63,10 @@ h1 small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color
   .toggle .lbl-long{display:none}
 }
 
+/* Embedded: only the race chart shows (the page behind it supplies everything else) */
+html.embed,html.embed body{background:transparent}
+html.embed body>*:not(.sheet-bg){display:none!important}
+
 /* Link to the scenario page */
 .pagelink{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0 10px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-weight:700;font-size:13px;text-decoration:none;color:var(--fg)}
 .pagelink span{color:var(--muted)}
@@ -433,6 +437,12 @@ const onElectionNight=fromHour=>{const d=etDate(),h=etHour();return(d===ELECTION
 // ---------- Clock ----------
 // All time-based logic reads this clock, so tests can run the page as if it were election night.
 const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.now();
+// Embedded mode (?embed=1&race=ID): another page (How We Looking) shows just this page's race
+// chart in an overlay. Everything else is hidden, and closing the chart tells that page to close.
+const PARAMS=new URLSearchParams(location.search);
+const EMBED=PARAMS.has("embed");
+let pendingOpen=PARAMS.get("race");
+if(EMBED)document.documentElement.classList.add("embed");
 
 // ---------- Small helpers ----------
 const $=id=>document.getElementById(id);
@@ -1131,9 +1141,10 @@ async function refresh(){
     saveHistory();
     lastOk=new Date(clockNow());lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
     saveSnapshot(result.out,lastMode==="snapshot"?result.seats:null);
-    store.set("et.lastSeen",now);
+    if(!EMBED)store.set("et.lastSeen",now);   // a chart opened from another page isn't a look at this one
     for(const r of races.values())metrics(r);
     render();
+    openPending();
     if(detail){renderDetailMeta();if(detail.range==="1h"||detail.range==="6h")loadDetail()}
     if(!bf.running)backfill();   // fill any gaps (e.g. the page sat open without refreshing)
   }catch(e){
@@ -1355,6 +1366,7 @@ function agoText(t){
   return Math.round(m/1440)+"d ago";
 }
 function closeDetail(){
+  if(EMBED){try{parent.postMessage({type:"et-close-race"},location.origin)}catch(e){}}
   const bg=$("sheetBg");if(bg)bg.remove();document.body.style.overflow="";
   const f=detail?.lastFocus;detail=null;if(f&&f.focus)f.focus();
 }
@@ -1447,7 +1459,7 @@ window.addEventListener("resize",()=>{if(detail?.series)drawChart()});
 
 // ---------- Auto refresh, wake lock, controls ----------
 let timer=null,nextAt=null,wake=null;
-function schedule(){clearTimeout(timer);nextAt=null;if(!ui.auto)return;nextAt=clockNow()+60e3;timer=setTimeout(refresh,60e3)}
+function schedule(){clearTimeout(timer);nextAt=null;if(!ui.auto||EMBED)return;nextAt=clockNow()+60e3;timer=setTimeout(refresh,60e3)}
 setInterval(()=>{const cd=$("cd");if(cd&&nextAt)cd.textContent=Math.max(0,Math.round((nextAt-clockNow())/1000))+"s"},1000);
 async function keepAwake(on){
   try{
@@ -1514,7 +1526,7 @@ $("sortSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.sort=v;setP
 $("typeSeg").onclick=e=>{const v=e.target.dataset?.v;if(!v)return;ui.type=v;setPressed("typeSeg",v);saveUi();render()};
 setPressed("sortSeg",ui.sort);setPressed("typeSeg",ui.type);setPressed("winSeg",ui.win);setPressed("mapMode",mapView.mode);applyMapOpen();
 $("auto").setAttribute("aria-pressed",ui.auto);$("compet").setAttribute("aria-pressed",ui.compet);
-if(ui.auto)keepAwake(true);
+if(ui.auto&&!EMBED)keepAwake(true);
 if(/[?&]check\b/.test(location.search)){
   $("checkBox").hidden=false;
   $("checkBtn").onclick=async()=>{
@@ -1524,7 +1536,14 @@ if(/[?&]check\b/.test(location.search)){
     if(bf.running)$("checkMsg").textContent+=" (Trends were still filling in; wait and copy again.)";
   };
 }
-paintSaved();
+// Open the race asked for in the address (?race=ID) once its odds are loaded
+function openPending(){
+  if(!pendingOpen||!races.size)return;
+  const id=pendingOpen;pendingOpen=null;
+  if(races.has(id))openDetail(id);
+  else if(EMBED){try{parent.postMessage({type:"et-close-race",missing:id},location.origin)}catch(e){}}
+}
+if(paintSaved())openPending();
 refresh();
 </script>
 </body>
