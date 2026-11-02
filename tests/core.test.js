@@ -27,7 +27,9 @@ test("ignores series that aren't races we track", () => {
 test("keeps only 2026 events (Kentucky governor 2027 is out)", () => {
   const state = { type: "gov" };
   assert.ok(Core.is2026(state, { event_ticker: "GOVPARTYAZ-26" }));
-  assert.ok(!Core.is2026(state, { event_ticker: "GOVPARTYKY-27" }));
+  assert.ok(!Core.is2026({ type: "gov", st: "KY" }, { event_ticker: "GOVPARTYKY-27" }));
+  assert.ok(Core.is2026({ type: "gov", st: "KS" }, { event_ticker: "GOVPARTYKS-27" }), "Kansas: named for inauguration year");
+  assert.ok(Core.is2026({ type: "gov", st: "NH" }, { event_ticker: "GOVPARTYNH-28" }), "New Hampshire: named for the term's end");
   assert.ok(Core.is2026({ type: "senate" }, { event_ticker: "SENATEAK-26B" }));
   assert.ok(Core.is2026({ type: "ctlS" }, { event_ticker: "CONTROLS-2026" }));
   assert.ok(!Core.is2026({ type: "ctlS" }, { event_ticker: "CONTROLS-2028" }));

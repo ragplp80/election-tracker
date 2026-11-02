@@ -139,6 +139,22 @@ test("catalog: statewide margin-of-victory markets come along, other margin mark
   } finally { restore(); }
 });
 
+test("catalog: a series with more events than one page holds is read to the end", async () => {
+  const H = require("./helpers.js");
+  const board = defaultBoard();
+  const ds = [];
+  for (const st of ["NC", "PA", "OH", "TX", "VA", "WI"]) for (let d = 1; d <= 9; d++) ds.push(H.twoParty(`KXHOUSERACE-${st}0${d}-26`, "D", "R", 0.5));
+  board.events.KXHOUSERACE = ds;          // 54 districts
+  board.pageSize = 20;                     // the fake Kalshi pages 20 at a time
+  board.events.GOVPARTYNH = [H.twoParty("GOVPARTYNH-28", "Cinde Warmington", "Kelly Ayotte", 0.2)];
+  const restore = useFakeKalshi(board, []);
+  try {
+    const cat = await lib.buildCatalog();
+    assert.equal(cat.races.filter((r) => r.meta.series === "KXHOUSERACE").length, 52, "every district (PA-7 has its own series; Wisconsin has no 9th)");
+    assert.ok(cat.races.some((r) => r.meta.type === "gov" && r.meta.st === "NH"), "New Hampshire governor (named -28) included");
+  } finally { restore(); }
+});
+
 test("relay: passes allowed read-only paths, refuses others", withBoard(defaultBoard(), async () => {
   const relay = require("../api/kalshi.js");
   const ok = await callHandler(relay, { path: "/events?series_ticker=SENATETX&with_nested_markets=true" });

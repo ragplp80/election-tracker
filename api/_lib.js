@@ -22,6 +22,20 @@ async function kget(path, { retries = 4 } = {}) {
   throw lastErr;
 }
 
+// Every open event in a series. Kalshi pages its answers (a multi-district series like
+// KXHOUSERACE has hundreds of events), so follow the cursor to the end.
+async function kgetEvents(series, { pages = 20 } = {}) {
+  const out = [];
+  let cursor = "";
+  for (let i = 0; i < pages; i++) {
+    const e = await kget(`/events?series_ticker=${series}&status=open&with_nested_markets=true&limit=200${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
+    out.push(...(e.events || []));
+    cursor = e.cursor || "";
+    if (!cursor || !(e.events || []).length) break;
+  }
+  return out;
+}
+
 // Run fn over items with at most n in flight. Failed items come back as {error}.
 async function pool(items, n, fn) {
   let i = 0;
@@ -44,8 +58,8 @@ async function buildCatalog() {
   const untracked = (j.series || []).filter((s) => Core.untrackedRace(s.ticker, s.title)).map((s) => [s.ticker, s.title]);
   if (!cands.some((c) => c.type === "seats")) cands.push({ series: "KXDHOUSESEATS", type: "seats" });
   const look = async (c) => {
-    const e = await kget(`/events?series_ticker=${c.series}&status=open&with_nested_markets=true`);
-    return { ...c, events: (e.events || []).filter((ev) => Core.is2026(c, ev)) };
+    const events = await kgetEvents(c.series);
+    return { ...c, events: events.filter((ev) => Core.is2026(c, ev)) };
   };
   const checked = await pool(cands, 5, look);
   // Kalshi sometimes pushes back on a burst of requests. Retry those slowly before giving up.
@@ -93,8 +107,7 @@ async function marginEvents() {
   const out = [];
   for (const series of ["KXGENERALMOV", "KXMIDTERMMOV"]) {
     try {
-      const e = await kget(`/events?series_ticker=${series}&status=open&with_nested_markets=true&limit=200`);
-      for (const ev of e.events || []) if (MARGIN_EVENT.test(ev.event_ticker)) out.push(Core.slimEvent(ev));
+      for (const ev of await kgetEvents(series)) if (MARGIN_EVENT.test(ev.event_ticker)) out.push(Core.slimEvent(ev));
     } catch (err) {}
   }
   return out;
@@ -116,7 +129,7 @@ function coverageOf(races, untracked) {
 // when nothing has been kept at all.
 let vercelFns = null;
 try { vercelFns = require("@vercel/functions"); } catch (e) {}   // not installed when testing locally
-const CATALOG_KEY = "catalog-v2", FRESH_MS = 3600e3;
+const CATALOG_KEY = "catalog-v3", FRESH_MS = 3600e3;
 let memCatalog = null, rebuilding = null;
 function runtimeCache() {
   try { return vercelFns && process.env.VERCEL ? vercelFns.getCache() : null; } catch (e) { return null; }
@@ -170,7 +183,7 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
   // and split by event)
   const bySeries = new Map();
   const read = (series) => {
-    if (!bySeries.has(series)) bySeries.set(series, kget(`/events?series_ticker=${series}&status=open&with_nested_markets=true`));
+    if (!bySeries.has(series)) bySeries.set(series, kgetEvents(series).then((events) => ({ events })));
     return bySeries.get(series);
   };
   const shortSet = new Set(short);
@@ -193,4 +206,4 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
   return { mode: "sweep", stats, races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats, margins: margins.map(swap) };
 }
 
-module.exports = { kget, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };
+module.exports = { kget, kgetEvents, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };

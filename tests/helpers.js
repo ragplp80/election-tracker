@@ -70,7 +70,10 @@ function fakeKalshi(board, log = []) {
     if (p === "/events") {
       const evs = board.events[u.searchParams.get("series_ticker")] || [];
       const nested = u.searchParams.get("with_nested_markets") === "true";
-      return json({ events: evs.map((e) => (nested ? e : { event_ticker: e.event_ticker })) });
+      // Page like Kalshi when board.pageSize is set (cursor = offset of the next page)
+      const size = board.pageSize || Infinity, from = +(u.searchParams.get("cursor") || 0);
+      const page = evs.slice(from, from + size), next = from + size < evs.length ? String(from + size) : "";
+      return json({ events: page.map((e) => (nested ? e : { event_ticker: e.event_ticker })), cursor: next });
     }
     if (p === "/markets") {
       if (board.noBatch) return json({ markets: [] });
