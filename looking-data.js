@@ -23,7 +23,7 @@ window.LOOKING = {
       riptide: [["VA-7", "Vindman"], ["IN-1", "Mrvan"], ["GA-2", "Bishop"]],
       tide: [["FL-14", "Castor", 1], ["FL-22", "Open seat", 1], ["FL-25", "Moskowitz", 1], ["VA-2", "Kiggans"], ["SC-1", "Open seat"]],
       wave: [["FL-9", "Soto", 1], ["FL-7", "Open seat"], ["VA-1", "Wittman"]],
-      tsunami: [["VA-5", "McGuire"], ["FL-27", "Salazar"], ["GA-1", "Open seat"], ["SC-2", "Wilson"]] },
+      tsunami: [["VA-5", "McGuire"], ["FL-27", "Salazar"], ["GA-1", "Open seat"], ["SC-2", "Wilson"], ["FL-12", "GOP seat", 1], ["FL-16", "GOP seat", 1]] },
     { at: 19.5, states: "NC · OH",
       riptide: [["OH-1", "Landsman", 1], ["OH-13", "Sykes", 1]],
       tide: [["NC-1", "Davis", 1], ["NC-11", "Open seat"], ["OH-7", "Miller"], ["OH-9", "Kaptur", 1]],
@@ -91,14 +91,6 @@ window.LOOKING = {
     { at: 23, text: "Abbott uncalled, lead shrinking", means: "GOP trouble", check: "txAbbottUncalled", side: "D" },
     { at: 23, text: "Polls close in Alaska", means: "" },
     { at: 27, text: "Senate control still unresolved", means: "GOP beat the polls, or Alaska/Maine pending", check: "senUnresolved", side: "R" },
-  ],
-  // The Florida meme ladder: each rung is a bigger shock. A rung is reached when Democrats are
-  // favored in every district on it and on every rung below.
-  floridaLadder: [
-    { label: "Eyebrow raise", seats: ["FL-25"] },
-    { label: "Wide eyes", seats: ["FL-14", "FL-22"] },
-    { label: "Jaw drop", seats: ["FL-9", "FL-27"] },
-    { label: "Laser eyes", seats: ["FL-12", "FL-16"] },
   ],
   notes: "Maine's ranked-choice count could take days; Alaska's ranked-choice tabulation doesn't start until Nov. 18.",
 };

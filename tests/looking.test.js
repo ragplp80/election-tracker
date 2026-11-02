@@ -111,13 +111,15 @@ test("How We Looking: tapping a race opens the live tracker's chart over the pag
   assert.match(pg.d.getElementById("raceFrame").getAttribute("src"), /race=HOUSEPA8-26/);
 });
 
-test("How We Looking: Florida ladder climbs only while every rung below is favored", async (t) => {
+test("How We Looking: FL-12 and FL-16 sit in the 7pm Blue Tsunami column", async (t) => {
   const b = board();
-  const set = (k, p) => { b.events["HOUSE" + k] = [twoParty(`HOUSE${k}-26`, "D", "R", p)]; };
-  set("FL25", 0.8); set("FL14", 0.75); set("FL22", 0.7); set("FL9", 0.6); set("FL27", 0.4); set("FL12", 0.55); set("FL16", 0.6);
+  b.events.HOUSEFL12 = [twoParty("HOUSEFL12-26", "D", "R", 0.16)];
+  b.events.HOUSEFL16 = [twoParty("HOUSEFL16-26", "D", "R", 0.25)];
   const pg = page(t, { board: b, now: Date.parse("2026-11-01T20:00:00Z") });
   await ready(pg);
-  assert.match(pg.text("#ladder .lsum"), /rung 2: Wide eyes/, "FL-27 not favored stops the climb, even though rung 4 is");
-  assert.equal(pg.d.querySelectorAll("#ladder .lrung.on").length, 2);
-  assert.ok(pg.d.querySelector('#ladder .chip[data-open="HOUSEFL12-26"]'), "districts open their charts");
+  const cells = [...pg.d.querySelectorAll("#hgrid .cell.tsunami")];
+  const sevenPm = cells.find((c) => /FL-27/.test(c.textContent));
+  assert.match(sevenPm.textContent, /FL-12.*R 84%/);
+  assert.match(sevenPm.textContent, /FL-16.*R 75%/);
+  assert.ok(!pg.d.getElementById("ladder"), "no separate ladder section");
 });
