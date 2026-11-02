@@ -73,10 +73,14 @@
   // Only this year's races. Kalshi names 2026 state races like SENATETX-26, control markets like
   // CONTROLS-2026, and the House seat count after the 120th Congress (KXDHOUSESEATS-27).
   // Off-year races (e.g. Kentucky governor, 2027) are also listed, so they are filtered out here.
+  const GOV_YEAR = { KS: "27", NH: "28" };
   function is2026(meta, ev) {
     const t = ev.event_ticker || "";
     if (meta.type === "ctlS" || meta.type === "ctlH") return /-2026\b/.test(t);
     if (meta.type === "seats") return /-27$/.test(t);
+    // A few 2026 governor races are named for another year: Kansas by inauguration (GOVPARTYKS-27)
+    // and New Hampshire by the end of the two-year term (GOVPARTYNH-28). Kentucky's -27 really is 2027.
+    if (meta.type === "gov" && GOV_YEAR[meta.st] && new RegExp(`-${GOV_YEAR[meta.st]}\\b`).test(t)) return true;
     return /-26(\b|[A-Z])/.test(t);
   }
 
