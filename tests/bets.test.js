@@ -157,3 +157,87 @@ test("bets: a Key ID saved with quotes around it still works", withAccount({ pos
   assert.equal(res.body.source, "account");
   assert.equal(seen[0].keyId, "8f2a1c3e-1111-4a2b-9c3d-0123456789ab", "quotes stripped before sending");
 }));
+
+// ---------- Parlay legs ----------
+const { market } = require("./helpers.js");
+
+function parlayBoard() {
+  const b = defaultBoard();
+  b.events.KXMVECROSSCATEGORY = [{
+    event_ticker: "KXMVECROSSCATEGORY-S2026TEST",
+    markets: [{
+      ...market("KXMVECROSSCATEGORY-S2026TEST-ABC", "parlay", 0.3),
+      yes_bid_dollars: "0.0000", yes_ask_dollars: "1.0000", last_price_dollars: "0.3000",
+      mve_selected_legs: [
+        { event_ticker: "SENATETX-26", market_ticker: "SENATETX-26-D", side: "yes" },
+        { event_ticker: "GOVPARTYAZ-26", market_ticker: "GOVPARTYAZ-26-D", side: "yes" },
+        { event_ticker: "CONTROLH-2026", market_ticker: "CONTROLH-2026-D", side: "yes" },
+        { event_ticker: "SENATEOHS-26", market_ticker: "SENATEOHS-26-R", side: "no" },
+      ],
+    }],
+  }];
+  // Ohio moved overnight: yesterday Husted was 0.80, today 0.73
+  const oh = b.events.SENATEOHS[0].markets.find((m) => m.ticker === "SENATEOHS-26-R");
+  oh.previous_price_dollars = "0.8000";
+  return b;
+}
+
+test("bets: parlays come with every leg priced on the side the parlay needs", async () => {
+  const old = { BETS_KEY: process.env.BETS_KEY, BETS_POSITIONS: process.env.BETS_POSITIONS };
+  process.env.BETS_KEY = KEY;
+  process.env.BETS_POSITIONS = JSON.stringify([{ t: "KXMVECROSSCATEGORY-S2026TEST-ABC", side: "yes", n: 100, cost: 30, label: "4-leg parlay", group: "Parlay" }]);
+  const restore = useFakeKalshi(parlayBoard(), []);
+  try {
+    const res = await callHandler(bets, { k: KEY });
+    const r = res.body.rows[0];
+    assert.equal(r.legs.length, 4);
+    const by = Object.fromEntries(r.legs.map((l) => [l.race, l]));
+    assert.equal(by["TX Sen"].name, "James Talarico");
+    assert.ok(Math.abs(by["TX Sen"].price - 0.68) < 1e-9);
+    assert.equal(by["House control"].name, "Democrats");
+    assert.equal(by["OH Sen (special)"].name, "Not Jon Husted");
+    assert.ok(Math.abs(by["OH Sen (special)"].price - 0.27) < 1e-9, "no side = 1 - yes");
+    assert.ok(Math.abs(by["OH Sen (special)"].prev - 0.2) < 1e-9, "trend baseline is on the leg's side too");
+    assert.equal(r.legsAhead, 3);
+    assert.ok(Math.abs(r.legsCombined - 0.68 * 0.9 * 0.91 * 0.27) < 1e-9);
+  } finally {
+    restore();
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
+test("bets: page shows a parlay's legs weakest first, and keeps the list open across refreshes", async () => {
+  const fs = require("fs"), path = require("path");
+  const { JSDOM } = require("jsdom");
+  const html = fs.readFileSync(path.join(__dirname, "..", "bets.html"), "utf8");
+  const body = {
+    at: Date.now(), source: "account", accountError: null,
+    totals: { cost: 30, value: 30, payout: 100, priced: 1, count: 1 },
+    rows: [{ ticker: "P1", label: "4-leg parlay", group: "Parlay", side: "yes", contracts: 100, cost: 30, price: 0.3, value: 30, payout: 100, status: "active", result: null,
+      legs: [
+        { ticker: "a", race: "TX Sen", name: "James Talarico", side: "yes", price: 0.68, prev: 0.6, result: null },
+        { ticker: "b", race: "OH Sen (special)", name: "Not Jon Husted", side: "no", price: 0.27, prev: 0.2, result: null },
+        { ticker: "c", race: "House control", name: "Democrats", side: "yes", price: 1, prev: 0.9, result: "yes" },
+      ], legsCombined: 0.18, legsAhead: 2, legsWon: 1, legsLost: 0 }],
+  };
+  const dom = new JSDOM(html, {
+    url: "https://x.test/bets.html?k=secret", runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(w) { w.fetch = async () => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) }); },
+  });
+  const doc = dom.window.document;
+  const wait = async (fn) => { for (let i = 0; i < 100 && !fn(); i++) await new Promise((r) => setTimeout(r, 20)); assert.ok(fn()); };
+  await wait(() => doc.querySelector(".legs"));
+  const names = [...doc.querySelectorAll(".leg .who")].map((e) => e.textContent);
+  assert.match(names[0], /Husted/, "weakest leg first");
+  assert.match(doc.querySelector(".legs summary").textContent, /2\/3 legs ahead/);
+  assert.match(doc.querySelector(".legs summary").textContent, /weakest: OH Sen \(special\) 27¢/);
+  assert.ok(doc.querySelector(".leg.won"), "settled leg marked won");
+  assert.match(doc.querySelectorAll(".leg .tr")[0].textContent, /▲7¢/);
+  // open it, refresh, still open
+  const d = doc.querySelector(".legs");
+  d.open = true; d.dispatchEvent(new dom.window.Event("toggle"));
+  doc.getElementById("refresh").click();
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(doc.querySelector(".legs").open, "stays open after refresh");
+  dom.window.close();
+});

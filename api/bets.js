@@ -175,6 +175,45 @@ function mergePositions(live, saved) {
   });
 }
 
+// ---------- Parlay legs ----------
+// "GOVPARTYGA-26" -> "GA Gov", "SENATEOHS-26" -> "OH Sen (special)", "CONTROLH-2026" -> "House control"
+function legRace(eventTicker) {
+  const t = String(eventTicker || "");
+  let m;
+  if (/^CONTROLH/.test(t)) return "House control";
+  if (/^CONTROLS/.test(t)) return "Senate control";
+  if ((m = t.match(/^(?:KX)?GOVPARTY([A-Z]{2})-/))) return m[1] + " Gov";
+  if ((m = t.match(/^(?:KX)?SENATE([A-Z]{2})S-/))) return m[1] + " Sen (special)";
+  if ((m = t.match(/^(?:KX)?SENATE([A-Z]{2})-/))) return m[1] + " Sen";
+  if ((m = t.match(/^KXHOUSERACE-([A-Z]{2})(\d+)-/))) return `${m[1]}-${m[2]}`;
+  return t;
+}
+
+// The legs of a parlay, each priced on the side the parlay needs, with yesterday's close for trend.
+function buildLegs(m, legMarkets) {
+  const legs = (m && m.mve_selected_legs) || [];
+  if (!legs.length) return null;
+  const out = legs.map((l) => {
+    const lm = legMarkets.get(l.market_ticker);
+    const side = l.side === "no" ? "no" : "yes";
+    const price = sideValue(lm, side);
+    const prevYes = lm ? num(lm.previous_price_dollars) : null;
+    const prev = prevYes == null ? null : side === "yes" ? prevYes : 1 - prevYes;
+    let name = lm ? lm.yes_sub_title || lm.title || l.market_ticker : l.market_ticker;
+    if (/^democratic party$/i.test(name)) name = "Democrats";
+    if (/^republican party$/i.test(name)) name = "Republicans";
+    return {
+      ticker: l.market_ticker, race: legRace(l.event_ticker), name: side === "no" ? "Not " + name : name, side,
+      price, prev, result: lm && lm.result ? lm.result : null,
+    };
+  });
+  // Rough "all legs hit" chance if the races were independent. Real races move together, so the
+  // true chance is usually higher than this; it's a guide, not a price.
+  const allPriced = out.every((l) => l.price != null);
+  const combined = allPriced ? out.reduce((p, l) => p * l.price, 1) : null;
+  return { legs: out, combined, ahead: out.filter((l) => l.price != null && l.price >= 0.5).length, won: out.filter((l) => l.price === 1).length, lost: out.filter((l) => l.price === 0).length };
+}
+
 async function fetchMarkets(tickers) {
   const out = new Map();
   for (let i = 0; i < tickers.length; i += 50) {
@@ -215,8 +254,13 @@ async function handler(req, res) {
   if (positions === null) return res.status(500).json({ error: "BETS_POSITIONS is not valid JSON", accountError });
 
   const markets = await fetchMarkets([...new Set(positions.map((p) => p.t))]);
+  // Parlays: price every leg too
+  const legTickers = new Set();
+  for (const m of markets.values()) for (const l of m.mve_selected_legs || []) if (l.market_ticker) legTickers.add(l.market_ticker);
+  const legMarkets = legTickers.size ? await fetchMarkets([...legTickers]) : new Map();
   const rows = positions.map((p) => {
     const m = markets.get(p.t);
+    const parlay = buildLegs(m, legMarkets);
     const v = sideValue(m, p.side);
     const n = num(p.n) || 0, cost = num(p.cost) || 0;
     return {
@@ -228,6 +272,7 @@ async function handler(req, res) {
       status: m ? m.status : "unknown", result: m && m.result ? m.result : null,
       title: m ? m.title || null : null,
       closes: m ? m.close_time || null : null,
+      ...(parlay ? { legs: parlay.legs, legsCombined: parlay.combined, legsAhead: parlay.ahead, legsWon: parlay.won, legsLost: parlay.lost } : {}),
     };
   });
   const sum = (k) => +rows.reduce((s, r) => s + (r[k] || 0), 0).toFixed(2);
@@ -245,3 +290,5 @@ module.exports.signRequest = signRequest;
 module.exports.loadPrivateKey = loadPrivateKey;
 module.exports.mergePositions = mergePositions;
 module.exports.groupOf = groupOf;
+module.exports.legRace = legRace;
+module.exports.buildLegs = buildLegs;

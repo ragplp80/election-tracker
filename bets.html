@@ -54,6 +54,22 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .pos{color:var(--up)} .neg{color:var(--down)}
 .foot{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:8px}
 .move{font-weight:700}
+.legs{border-top:1px solid var(--line);padding-top:8px}
+.legs summary{cursor:pointer;font-size:13px;color:var(--muted);list-style:none;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.legs summary::-webkit-details-marker{display:none}
+.legs summary::before{content:"▸";display:inline-block;transition:transform .15s}
+.legs[open] summary::before{transform:rotate(90deg)}
+.legs summary b{color:var(--fg)}
+.leglist{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.leg{display:grid;grid-template-columns:8px 1fr auto 52px;gap:8px;align-items:center;font-size:13px;font-variant-numeric:tabular-nums}
+.leg .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.leg.on .dot{background:var(--up)} .leg.off .dot{background:var(--down)} .leg.won .dot{background:var(--up);box-shadow:0 0 0 2px color-mix(in srgb,var(--up) 35%,transparent)}
+.leg.lost{opacity:.55;text-decoration:line-through}
+.leg .who{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.leg .who small{color:var(--muted);font-size:11px;margin-right:4px}
+.leg .pc{font-weight:700;text-align:right}
+.leg .tr{font-size:11px;text-align:right;color:var(--muted)}
+.legnote{color:var(--faint);font-size:11px;margin-top:6px}
 .msg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;color:var(--muted);text-align:center}
 @media (max-width:760px){.totals{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:22px}}
 </style>
@@ -85,6 +101,31 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
   const cents = (p) => (p == null ? "—" : Math.round(p * 100) + "¢");
   const GROUP_ORDER = ["Senate", "Governor", "House", "Control", "Parlay", "State", "Other"];
   let first = null, prev = null, data = null;   // prices when the page opened, and at the last refresh
+  const openLegs = new Set();                    // parlays whose leg list is expanded (kept across refreshes)
+  document.addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (!d.classList || !d.classList.contains("legs")) return;
+    if (d.open) openLegs.add(d.dataset.t); else openLegs.delete(d.dataset.t);
+  }, true);
+
+  function legsBlock(r) {
+    if (!r.legs || !r.legs.length) return "";
+    const legs = r.legs.slice().sort((a, b) => (a.price ?? -1) - (b.price ?? -1));   // weakest first
+    const weakest = legs.find((l) => l.price != null && l.price < 1);
+    const row = (l) => {
+      const cls = l.price === 1 ? "won" : l.price === 0 ? "lost" : l.price == null ? "" : l.price >= 0.5 ? "on" : "off";
+      const d = l.price != null && l.prev != null ? Math.round((l.price - l.prev) * 100) : 0;
+      const tr = l.price === 1 ? "won" : l.price === 0 ? "lost" : d ? `<span class="${d > 0 ? "pos" : "neg"}">${d > 0 ? "▲" : "▼"}${Math.abs(d)}¢</span>` : "—";
+      return `<div class="leg ${cls}"><span class="dot"></span><span class="who"><small>${esc(l.race)}</small>${esc(l.name)}</span><span class="pc">${cents(l.price)}</span><span class="tr">${tr}</span></div>`;
+    };
+    const all = r.legsCombined == null ? "" : ` · all hit ≈ <b>${r.legsCombined < 0.01 ? "<1" : Math.round(r.legsCombined * 100)}%</b>`;
+    const done = r.legsWon || r.legsLost ? ` · <b>${r.legsWon}</b> won${r.legsLost ? `, <b class="neg">${r.legsLost}</b> lost` : ""}` : "";
+    return `<details class="legs" data-t="${esc(r.ticker)}"${openLegs.has(r.ticker) ? " open" : ""}>
+      <summary><b>${r.legsAhead}/${r.legs.length}</b> legs ahead${done}${all}${weakest ? ` · weakest: ${esc(weakest.race)} ${cents(weakest.price)}` : ""}</summary>
+      <div class="leglist">${legs.map(row).join("")}</div>
+      <div class="legnote">Weakest legs first. Arrows: change since yesterday's close. "All hit" multiplies the legs as if unrelated; races tend to move together, so the real chance is usually higher.</div>
+    </details>`;
+  }
 
   try { $("sort").value = localStorage.getItem("board-sort") || "group"; } catch (e) {}
   $("sort").onchange = () => { try { localStorage.setItem("board-sort", $("sort").value); } catch (e) {} render(); };
@@ -110,6 +151,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
         <div><small>Pays if wins</small><b>${money(r.payout)}</b></div>
       </div>
       <div class="foot"><span>${state} · paid ${money(r.cost)}${flash}</span>${move}</div>
+      ${legsBlock(r)}
     </div>`;
   }
 
