@@ -406,3 +406,20 @@ test("shared trends fill the page's history so races aren't looked up one by one
   const looked = pg.log.filter((l) => l.startsWith("PAGE /api/history") && !l.includes("KXDHOUSESEATS"));
   assert.deepEqual(looked, [], "no race looked up one by one (the seat-count baseline is separate)");
 });
+
+test("TV panels (?embed=1&view=movers / feed): one panel, sorted by movers over the hour, settings untouched", async (t) => {
+  const saved = { sort: "key", type: "senate", compet: true, auto: false, win: "15m" };
+  const pg = loadPage({ url: "https://tracker.test/?embed=1&view=movers", storage: { "et.ui": saved } });
+  t.after(() => pg.close());
+  await loaded(pg);
+  assert.ok(pg.d.documentElement.classList.contains("view-movers"));
+  assert.match(pg.text("#winHead"), /1h/);
+  assert.ok(pg.rows().length <= 12);
+  assert.ok(pg.rows().some((r) => /House/.test(r.textContent)), "all race types, not the saved Senate filter");
+  const msgs = [];
+  pg.w.addEventListener("message", (e) => msgs.push(e.data));
+  pg.rows()[0].click();
+  await waitFor(() => msgs.some((m) => m && m.type === "et-tap"), { what: "tap passed to the slideshow" });
+  assert.ok(!pg.d.getElementById("sheetBg"), "no chart opens inside the panel");
+  assert.deepEqual(JSON.parse(pg.w.localStorage.getItem("et.ui")), saved, "your saved view is left alone");
+});
