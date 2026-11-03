@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="My Board">
+<title>Board</title>
+<style>
+/* Private positions board. Not linked from any other page. Built for iPad landscape, stacks on phones. */
+:root{
+  --bg:#0d1520; --surface:#141e2b; --surface2:#1a2636; --line:#243346;
+  --fg:#e6ecf2; --muted:#8b9bb0; --faint:#56667a;
+  --up:#3ccf7e; --down:#f0574a; --warn:#f2b33d;
+  --font:-apple-system,"Helvetica Neue",Arial,sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root{
+  --bg:#eef1f5; --surface:#fff; --surface2:#f6f8fb; --line:#d8dee6;
+  --fg:#121a24; --muted:#5a6878; --faint:#98a4b3;
+  --up:#13894a; --down:#cf2e2e; --warn:#a86a00; color-scheme:light;
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.35 var(--font);padding:16px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left))}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:20px;margin:0;font-weight:750;letter-spacing:-.01em}
+#updated{color:var(--muted);font-size:13px}
+button{font:inherit;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+.spacer{flex:1}
+.totals{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.stat .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-size:26px;font-weight:750;font-variant-numeric:tabular-nums;margin-top:2px}
+.stat .s{color:var(--muted);font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
+h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 8px;font-weight:650}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.tile{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--faint);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.tile.on{border-left-color:var(--up)} .tile.off{border-left-color:var(--down)}
+.tile.won{border-left-color:var(--up);background:color-mix(in srgb,var(--up) 10%,var(--surface))}
+.tile.lost{opacity:.6}
+.top{display:flex;gap:8px;align-items:flex-start}
+.label{font-weight:650;flex:1}
+.side{font-size:11px;font-weight:750;padding:2px 7px;border-radius:6px;background:var(--surface2);border:1px solid var(--line);white-space:nowrap}
+.bar{height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--muted)}
+.tile.on .bar i{background:var(--up)} .tile.off .bar i{background:var(--down)}
+.nums{display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums;font-size:14px}
+.nums div{display:flex;flex-direction:column}
+.nums small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.nums b{font-size:17px}
+.pos{color:var(--up)} .neg{color:var(--down)}
+.foot{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:8px}
+.move{font-weight:700}
+.msg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;color:var(--muted);text-align:center}
+@media (max-width:760px){.totals{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:22px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>My Board</h1>
+  <span id="updated"></span>
+  <span class="spacer"></span>
+  <label style="font-size:13px;color:var(--muted)">Sort
+    <select id="sort" style="font:inherit;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:5px">
+      <option value="group">By race type</option>
+      <option value="pl">Profit / loss</option>
+      <option value="chance">Chance</option>
+    </select>
+  </label>
+  <button id="refresh">Refresh</button>
+</header>
+<div id="totals"></div>
+<div id="board"><div class="msg">Loading…</div></div>
+
+<script>
+(function () {
+  const key = new URLSearchParams(location.search).get("k") || "";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const money = (v) => (v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2));
+  const signed = (v) => (v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + "$" + Math.abs(v).toFixed(2));
+  const cents = (p) => (p == null ? "—" : Math.round(p * 100) + "¢");
+  const GROUP_ORDER = ["Senate", "Governor", "House", "Control", "Parlay", "State", "Other"];
+  let first = null, prev = null, data = null;   // prices when the page opened, and at the last refresh
+
+  try { $("sort").value = localStorage.getItem("board-sort") || "group"; } catch (e) {}
+  $("sort").onchange = () => { try { localStorage.setItem("board-sort", $("sort").value); } catch (e) {} render(); };
+  $("refresh").onclick = () => load();
+
+  function tile(r) {
+    const pl = r.value == null ? null : +(r.value - r.cost).toFixed(2);
+    const settled = r.result === "yes" || r.result === "no";
+    const cls = settled ? (r.price === 1 ? "won" : "lost") : r.price == null ? "" : r.price >= 0.5 ? "on" : "off";
+    const was = first && first[r.ticker], last = prev && prev[r.ticker];
+    const dOpen = was != null && r.price != null ? Math.round((r.price - was) * 100) : 0;
+    const dLast = last != null && r.price != null ? Math.round((r.price - last) * 100) : 0;
+    const move = dOpen ? `<span class="move ${dOpen > 0 ? "pos" : "neg"}">${dOpen > 0 ? "▲" : "▼"}${Math.abs(dOpen)}¢ today</span>` : "";
+    const flash = dLast ? ` · <span class="${dLast > 0 ? "pos" : "neg"}">${dLast > 0 ? "+" : "−"}${Math.abs(dLast)}¢ just now</span>` : "";
+    const state = settled ? (r.price === 1 ? "WON" : "Lost") : r.status === "unknown" ? "No price" : r.price >= 0.5 ? "On track" : "Behind";
+    return `<div class="tile ${cls}">
+      <div class="top"><div class="label">${esc(r.label)}</div><span class="side">${r.side.toUpperCase()} × ${r.contracts.toFixed(0)}</span></div>
+      <div class="bar"><i style="width:${r.price == null ? 0 : Math.round(r.price * 100)}%"></i></div>
+      <div class="nums">
+        <div><small>Chance</small><b>${cents(r.price)}</b></div>
+        <div><small>Worth now</small><b>${money(r.value)}</b></div>
+        <div><small>P/L</small><b class="${pl > 0 ? "pos" : pl < 0 ? "neg" : ""}">${signed(pl)}</b></div>
+        <div><small>Pays if wins</small><b>${money(r.payout)}</b></div>
+      </div>
+      <div class="foot"><span>${state} · paid ${money(r.cost)}${flash}</span>${move}</div>
+    </div>`;
+  }
+
+  function render() {
+    if (!data) return;
+    const rows = data.rows.slice();
+    const t = data.totals, pl = +(t.value - t.cost).toFixed(2);
+    const on = rows.filter((r) => r.price != null && r.price >= 0.5).length;
+    const best = rows.filter((r) => r.price != null && r.price >= 0.5).reduce((s, r) => s + r.payout, 0);
+    $("totals").innerHTML = `<div class="totals">
+      <div class="stat"><div class="k">Paid</div><div class="v">${money(t.cost)}</div><div class="s">${t.count} positions</div></div>
+      <div class="stat"><div class="k">Worth now</div><div class="v">${money(t.value)}</div><div class="s">at current prices</div></div>
+      <div class="stat"><div class="k">Profit / loss</div><div class="v ${pl > 0 ? "pos" : pl < 0 ? "neg" : ""}">${signed(pl)}</div><div class="s">${t.cost ? ((pl / t.cost) * 100).toFixed(1) + "%" : ""}</div></div>
+      <div class="stat"><div class="k">On track</div><div class="v">${on} / ${t.count}</div><div class="s">would pay ${money(best)}</div></div>
+      <div class="stat"><div class="k">If all win</div><div class="v">${money(t.payout)}</div><div class="s">max payout</div></div>
+    </div>`;
+    const how = $("sort").value;
+    if (how === "pl") {
+      rows.sort((a, b) => ((b.value ?? b.cost) - b.cost) - ((a.value ?? a.cost) - a.cost));
+      $("board").innerHTML = `<div class="grid">${rows.map(tile).join("")}</div>`;
+    } else if (how === "chance") {
+      rows.sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
+      $("board").innerHTML = `<div class="grid">${rows.map(tile).join("")}</div>`;
+    } else {
+      const groups = [...new Set(rows.map((r) => r.group))].sort((a, b) => (GROUP_ORDER.indexOf(a) + 99) % 99 - (GROUP_ORDER.indexOf(b) + 99) % 99);
+      $("board").innerHTML = groups.map((g) => `<h2>${esc(g)}</h2><div class="grid">${rows.filter((r) => r.group === g).map(tile).join("")}</div>`).join("");
+    }
+  }
+
+  async function load() {
+    if (!key) { $("board").innerHTML = `<div class="msg">Not found.</div>`; return; }
+    try {
+      const r = await fetch("/api/bets?k=" + encodeURIComponent(key), { cache: "no-store" });
+      if (!r.ok) { $("board").innerHTML = `<div class="msg">${r.status === 404 ? "Not found." : "Couldn't load (" + r.status + "). Retrying…"}</div>`; return; }
+      const next = await r.json();
+      if (data) prev = Object.fromEntries(data.rows.map((x) => [x.ticker, x.price]));
+      data = next;
+      if (!first) {
+        try { const saved = JSON.parse(sessionStorage.getItem("board-first") || "null"); if (saved) first = saved; } catch (e) {}
+        if (!first) { first = Object.fromEntries(data.rows.map((x) => [x.ticker, x.price])); try { sessionStorage.setItem("board-first", JSON.stringify(first)); } catch (e) {} }
+      }
+      $("updated").textContent = "Updated " + new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) + (data.totals.priced < data.totals.count ? ` · ${data.totals.count - data.totals.priced} without a price` : "");
+      render();
+    } catch (e) {
+      $("updated").textContent = "Offline — retrying";
+    }
+  }
+  load();
+  setInterval(load, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+})();
+</script>
+</body>
+</html>
