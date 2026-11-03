@@ -65,3 +65,4 @@ module.exports = async (req, res) => {
   }
 };
 module.exports.reset = () => mem.clear();
+module.exports.history = history;

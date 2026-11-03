@@ -243,6 +243,8 @@ test("bets: page shows a parlay's legs weakest first, and keeps the list open ac
 });
 
 // ---------- Hedge helper ----------
+const openDoms = [];   // page windows to close after each test, pass or fail (their refresh timers keep the run alive)
+test.afterEach(() => { while (openDoms.length) { try { openDoms.pop().window.close(); } catch (e) {} } });
 function renderBoard(body) {
   const fs = require("fs"), path = require("path");
   const { JSDOM } = require("jsdom");
@@ -251,6 +253,7 @@ function renderBoard(body) {
     url: "https://x.test/bets.html?k=secret", runScripts: "dangerously", pretendToBeVisual: true,
     beforeParse(w) { w.fetch = async () => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) }); },
   });
+  openDoms.push(dom);
   return dom;
 }
 const waitFor2 = async (fn) => { for (let i = 0; i < 100 && !fn(); i++) await new Promise((r) => setTimeout(r, 20)); assert.ok(fn()); };
@@ -297,4 +300,174 @@ test("bets: Kalshi links and hedge prices come from the market data", () => {
   assert.equal(bets.oppositeAsk({ no_ask_dollars: "0.3000" }, "yes"), 0.3);
   assert.equal(bets.oppositeAsk({ yes_ask_dollars: "0.2500" }, "no"), 0.25);
   assert.equal(bets.oppositeAsk({ yes_bid_dollars: "0.7000", no_ask_dollars: "1.0000" }, "yes"), 0.3, "falls back to 1 - bid when no ask");
+});
+
+// ---------- Lines, sell-now, map and history ----------
+function ladderBoard() {
+  const b = defaultBoard();
+  const rung = (ev, k, p, name) => ({ ...market(`${ev}-P${k}`, `${name}, ${k}+ pts`, p), floor_strike: k, strike_type: "greater_or_equal" });
+  b.events.KXMIDTERMMOV = [
+    { event_ticker: "KXMIDTERMMOV-TXGOVR", markets: [rung("KXMIDTERMMOV-TXGOVR", 1, 0.7, "Abbott"), rung("KXMIDTERMMOV-TXGOVR", 2, 0.6, "Abbott"), rung("KXMIDTERMMOV-TXGOVR", 3, 0.45, "Abbott"), rung("KXMIDTERMMOV-TXGOVR", 5, 0.25, "Abbott")] },
+    { event_ticker: "KXMIDTERMMOV-TXGOVD", markets: [rung("KXMIDTERMMOV-TXGOVD", 1, 0.2, "Hinojosa"), rung("KXMIDTERMMOV-TXGOVD", 3, 0.08, "Hinojosa")] },
+  ];
+  return b;
+}
+
+test("bets: margin bets come with the market's line, sell-now value and their state", async () => {
+  const old = { BETS_KEY: process.env.BETS_KEY, BETS_POSITIONS: process.env.BETS_POSITIONS };
+  process.env.BETS_KEY = KEY;
+  process.env.BETS_POSITIONS = JSON.stringify([
+    { t: "KXMIDTERMMOV-TXGOVR-P3", side: "no", n: 18, cost: 9.6, label: "TX Gov: Abbott under 3", group: "Governor" },
+    { t: "SENATETX-26-D", side: "yes", n: 20, cost: 12, label: "TX Sen", group: "Senate" },
+  ]);
+  const restore = useFakeKalshi(ladderBoard(), []);
+  try {
+    const res = await callHandler(bets, { k: KEY });
+    const [tx, sen] = res.body.rows;
+    assert.equal(tx.st, "TX");
+    assert.equal(tx.line.kind, "margin");
+    assert.equal(tx.line.median, 2.7);
+    assert.equal(tx.line.other, "Hinojosa");
+    assert.equal(tx.line.room, 0.3);
+    assert.equal(sen.line, undefined, "winner markets have no ladder line");
+    // NO side sells at the NO bid: market() quotes yes 0.445/0.455, so the NO bid is ~0.545
+    assert.ok(tx.sell.value > 0 && tx.sell.bid != null);
+    assert.ok(res.body.totals.sell > 0);
+  } finally {
+    restore();
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
+test("bets: history view returns a timeline of P/L for the current bets", async () => {
+  const old = { BETS_KEY: process.env.BETS_KEY, BETS_POSITIONS: process.env.BETS_POSITIONS };
+  process.env.BETS_KEY = KEY;
+  process.env.BETS_POSITIONS = JSON.stringify([{ t: "SENATETX-26-D", side: "yes", n: 20, cost: 12, label: "TX Sen", group: "Senate" }]);
+  const board = defaultBoard();
+  board.candles = (tk, t) => (tk === "SENATETX-26-D" ? 0.6 : null);   // flat 60¢ history, live 68¢
+  const restore = useFakeKalshi(board, []);
+  try {
+    const res = await callHandler(bets, { k: KEY, view: "history", range: "6h" });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.range, "6h");
+    assert.ok(res.body.t.length > 100);
+    const s = res.body.bets["SENATETX-26-D"];
+    assert.equal(s[5], 0.6);
+    assert.ok(Math.abs(s[s.length - 1] - 0.68) < 1e-9);
+    assert.equal(res.body.pl[5], 0, "20 x 0.60 - 12 = 0");
+    assert.equal(res.body.pl[res.body.pl.length - 1], 1.6);
+    const bad = await callHandler(bets, { k: "nope", view: "history" });
+    assert.equal(bad.statusCode, 404, "history is behind the key too");
+  } finally {
+    restore();
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
+// The page, with each request answered by what it asks for
+function renderRouted({ body, history, map }) {
+  const fs = require("fs"), path = require("path");
+  const { JSDOM } = require("jsdom");
+  const html = fs.readFileSync(path.join(__dirname, "..", "bets.html"), "utf8");
+  const ok = (j) => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(j)) });
+  const dom = new JSDOM(html, {
+    url: "https://x.test/bets.html?k=secret", runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(w) {
+      w.fetch = async (u) => {
+        u = String(u);
+        if (u.includes("map2026.json")) return map ? ok(map) : { ok: false, status: 404, json: async () => ({}) };
+        if (u.includes("view=history")) return history ? ok(history) : { ok: false, status: 502, json: async () => ({}) };
+        return ok(body);
+      };
+    },
+  });
+  openDoms.push(dom);
+  return dom;
+}
+const tinyMap = { w: 975, h: 610, states: { TX: { n: "Texas", d: "M0,0h10v10h-10Z", b: [0, 0, 10, 10] }, FL: { n: "Florida", d: "M20,0h10v10h-10Z", b: [20, 0, 30, 10] }, OH: { n: "Ohio", d: "M40,0h10v10h-10Z", b: [40, 0, 50, 10] } } };
+function fullBody() {
+  const now = Math.floor(Date.now() / 1000);
+  const t = Array.from({ length: 10 }, (_, i) => now - (9 - i) * 120);
+  return {
+    body: {
+      at: Date.now(), source: "account", accountError: null,
+      totals: { cost: 40, value: 42, payout: 80, priced: 3, count: 3, sell: 39.5 },
+      rows: [
+        { ticker: "TXM", label: "TX Gov: Abbott under 3", group: "Governor", side: "no", contracts: 18, cost: 9.6, price: 0.55, value: 9.9, payout: 18, status: "active", result: null, st: "TX", url: "https://kalshi.com/markets/kxmidtermmov/midterm-margin-of-victory/kxmidtermmov-txgovr",
+          sell: { bid: 0.52, value: 9.28 },
+          line: { kind: "margin", unit: "pts", who: "Abbott", other: "Hinojosa", median: 2.7, lo: -1, hi: 5, loOpen: false, hiOpen: true, need: { op: "<", a: 3 }, room: 0.3 } },
+        { ticker: "FLG", label: "FL Gov: Donalds", group: "Governor", side: "yes", contracts: 14, cost: 10, price: 0.4, value: 5.6, payout: 14, status: "active", result: null, st: "FL", sell: { bid: 0.38, value: 5.2 } },
+        { ticker: "SEATS", label: "Dems 238–241 seats", group: "Control", side: "yes", contracts: 100, cost: 20.4, price: 0.18, value: 18, payout: 100, status: "active", result: null, st: null, sell: { noBuyers: true, bid: 0, value: 0 },
+          line: { kind: "seats", unit: "seats", who: "Democrats", median: 236, lo: 230, hi: 242, need: { op: "in", a: 238, b: 241 }, room: -2 } },
+      ],
+    },
+    history: { at: Date.now(), range: "6h", t, worth: t.map((_, i) => 38 + i * 0.5), pl: t.map((_, i) => -2 + i * 0.5), cost: 40, bets: { TXM: t.map((_, i) => 0.5 + i * 0.005), FLG: t.map(() => 0.4), SEATS: t.map(() => 0.18) }, parlays: {}, missing: [] },
+  };
+}
+
+test("bets: page draws the P/L chart, sparklines, your line vs the market, and sell-now", async () => {
+  const { body, history } = fullBody();
+  const dom = renderRouted({ body, history, map: tinyMap });
+  const doc = dom.window.document;
+  await waitFor2(() => doc.querySelector("#chart svg") && doc.querySelector(".spark"));
+  // Totals: sell-now stat
+  assert.match(doc.getElementById("totals").textContent, /Sell now\$39\.50/);
+  // Chart: current P/L and change over the range
+  assert.match(doc.getElementById("chartNow").textContent, /\+\$2\.50/);
+  assert.match(doc.getElementById("chartChange").textContent, /▲ \$4\.50 in the last 6h/);
+  assert.ok(doc.querySelector("#chart path[clip-path]"), "gain/loss areas drawn");
+  // Sparklines: start and now
+  const sp = doc.querySelector('.spark[data-t="TXM"]');
+  assert.match(sp.textContent, /6h ago 50¢/);
+  assert.match(sp.textContent, /now 55¢/);
+  // Line block
+  const tx = [...doc.querySelectorAll(".tile")].find((t) => /Abbott under 3/.test(t.textContent));
+  const lt = tx.querySelector(".line .lt").textContent;
+  assert.match(lt, /Market expects Abbott \+2\.7 \(likely Hinojosa \+1 to Abbott \+5\+\)/);
+  assert.match(lt, /You need Abbott under \+3, or Abbott loses · 0\.3 pts to spare/);
+  assert.ok(tx.querySelector(".line circle"), "market's middle drawn as a dot");
+  const seats = [...doc.querySelectorAll(".tile")].find((t) => /238–241/.test(t.textContent));
+  assert.match(seats.querySelector(".line .lt").textContent, /Dems ~236 seats \(likely 230–242\).*238–241 seats · 2 seats outside your range/);
+  // Sell line
+  assert.match(tx.querySelector(".sell").textContent, /Sell now: \$9\.28 at 52¢ after fee · −\$0\.32 vs paid/);
+  assert.match(seats.querySelector(".sell").textContent, /no buyers/);
+  dom.window.close();
+});
+
+test("bets: money map colors states by how your bets there are doing, and lists them on tap", async () => {
+  const { body, history } = fullBody();
+  body.rows.push({ ticker: "P", label: "2-leg parlay", group: "Parlay", side: "yes", contracts: 50, cost: 10, price: 0.2, value: 10, payout: 50, status: "active", result: null, st: null,
+    legs: [{ ticker: "a", race: "OH Sen (special)", name: "Sherrod Brown", side: "yes", price: 0.72, st: "OH" }, { ticker: "b", race: "House control", name: "Democrats", side: "yes", price: 0.93, st: null }], legsCombined: 0.67, legsAhead: 2, legsWon: 0, legsLost: 0 });
+  const dom = renderRouted({ body, history, map: tinyMap });
+  const doc = dom.window.document;
+  await waitFor2(() => doc.querySelector('#map path[data-st="TX"]'));
+  const fill = (st) => doc.querySelector(`#map path[data-st="${st}"]`).getAttribute("style");
+  assert.match(fill("TX"), /var\(--up\)/, "TX bet at 55¢: on track");
+  assert.match(fill("FL"), /var\(--down\)/, "FL bet at 40¢: behind");
+  assert.match(fill("OH"), /var\(--nob\)/, "OH only has a parlay leg: no direct bet");
+  assert.equal(doc.querySelectorAll('#map path[fill="url(#mHatch)"]').length, 1, "behind states are hatched too");
+  assert.match(doc.getElementById("mapSub").textContent, /2 states · \$19\.60 at stake/);
+  assert.match(doc.getElementById("natl").textContent, /Dems 238–241 seats · 18¢/);
+  // tap Florida
+  doc.querySelector('#map path[data-st="FL"]').dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  assert.match(doc.getElementById("mapInfo").textContent, /Florida · Behind · \$10\.00 at stake/);
+  assert.match(doc.getElementById("mapInfo").textContent, /FL Gov: Donalds40¢−\$4\.40/);
+  // switch to parlay legs
+  doc.querySelector('#mapModes button[data-m="legs"]').click();
+  await waitFor2(() => /var\(--up\)/.test(fill("OH")));
+  assert.match(fill("TX"), /var\(--nob\)/, "no parlay legs in TX");
+  assert.match(doc.getElementById("natl").textContent, /House control: Democrats · 93¢/);
+  dom.window.close();
+});
+
+test("bets: page still works when the map and history can't load", async () => {
+  const { body } = fullBody();
+  const dom = renderRouted({ body, history: null, map: null });
+  const doc = dom.window.document;
+  await waitFor2(() => doc.querySelector(".tile"));
+  await waitFor2(() => doc.getElementById("mapCard").hidden === true);
+  await waitFor2(() => /History isn't available/.test(doc.getElementById("chart").textContent));
+  assert.equal(doc.querySelector(".spark"), null, "no sparklines without history");
+  assert.equal(doc.querySelectorAll(".tile").length, 3);
+  dom.window.close();
 });

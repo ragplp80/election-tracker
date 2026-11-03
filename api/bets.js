@@ -10,7 +10,9 @@
 // BETS_POSITIONS: [{ "t": "KXMIDTERMMOV-TXGOVR-P3", "side": "no", "n": 17.97, "cost": 9.68,
 //                    "label": "TX Gov: Abbott wins by under 3", "group": "Governor" }, ...]
 const crypto = require("crypto");
-const { kget } = require("./_lib.js");
+const { kget, pool } = require("./_lib.js");
+const Board = require("./_boardlib.js");
+const History = require("./history.js");
 
 const KALSHI_HOST = "https://api.elections.kalshi.com";
 const API_PREFIX = "/trade-api/v2";
@@ -231,6 +233,7 @@ function buildLegs(m, legMarkets) {
       hedgeSide: side === "yes" ? "no" : "yes", hedgeAsk: oppositeAsk(lm, side),
       hedgeName: lm ? (side === "yes" ? "Not " : "") + (lm.yes_sub_title || lm.title || l.market_ticker) : null,
       url: kalshiUrl(l.event_ticker || (lm && lm.event_ticker)),
+      st: Board.stateOf(l.event_ticker || (lm && lm.event_ticker)),
     };
   });
   // Rough "all legs hit" chance if the races were independent. Real races move together, so the
@@ -257,9 +260,52 @@ async function fetchMarkets(tickers) {
   return out;
 }
 
+// Every market in an event (a margin or seat ladder), or null if Kalshi doesn't have it
+async function fetchEventMarkets(ev) {
+  try {
+    const j = await kget(`/events/${encodeURIComponent(ev)}?with_nested_markets=true`, { retries: 2 });
+    return (j.event && j.event.markets) || j.markets || null;
+  } catch (e) { return null; }
+}
+
+// Ladder bets (margins, vote shares, seat ranges): the market's middle estimate vs. your line
+async function linesFor(rows, markets) {
+  const want = new Map();   // event -> counterpart event (or null)
+  for (const r of rows) {
+    const m = markets.get(r.ticker);
+    if (!m || r.legs || !m.event_ticker) continue;
+    const ladderish = /greater|between/.test(m.strike_type || "") && (m.floor_strike != null);
+    if (!ladderish) continue;
+    want.set(m.event_ticker, Board.counterpartEvent(m.event_ticker));
+  }
+  const evs = new Set();
+  for (const [e, c] of want) { evs.add(e); if (c) evs.add(c); }
+  const list = [...evs];
+  const got = await pool(list, 4, fetchEventMarkets);
+  const byEv = new Map(list.map((e, i) => [e, Array.isArray(got[i]) ? got[i] : null]));
+  for (const r of rows) {
+    const m = markets.get(r.ticker);
+    if (!m || !want.has(m.event_ticker)) continue;
+    try { r.line = Board.buildLine(m, r.side, byEv.get(m.event_ticker), byEv.get(want.get(m.event_ticker))); } catch (e) { r.line = null; }
+  }
+}
+
+// Price history for the night chart, kept in the tracker's shared store (api/history.js)
+async function getHistory(series, ticker, period, start, end) {
+  const { h } = await History.history(series, ticker, period, start, end);
+  return h.c.filter((c) => c[0] >= start && c[0] <= end);
+}
+const historyCache = new Map();   // range|positions -> { at, body }
+
+// Name for a bet that's on the account but not in the saved list: "VA-05: Perriello wins"
 function autoLabel(m, p) {
   if (!m) return p.t;
   const name = m.yes_sub_title || m.title || p.t;
+  const race = legRace(m.event_ticker);
+  if (race && race !== m.event_ticker && !/margin|vote|seats/i.test(m.title || "")) {
+    const last = name.split(" ").length > 1 && !/party$/i.test(name) ? name.split(" ").slice(-1)[0] : name;
+    return `${race}: ${last} ${p.side === "no" ? "loses" : "wins"}`;
+  }
   return p.side === "no" ? "NO: " + name : name;
 }
 
@@ -299,14 +345,34 @@ async function handler(req, res) {
       title: m ? m.title || null : null,
       closes: m ? m.close_time || null : null,
       url: m && !parlay ? kalshiUrl(m.event_ticker) : null,
+      st: m && !parlay ? Board.stateOf(m.event_ticker) : null,
+      sell: Board.sellNow(m, p.side, n),
       ...(parlay ? { legs: parlay.legs, legsCombined: parlay.combined, legsAhead: parlay.ahead, legsWon: parlay.won, legsLost: parlay.lost } : {}),
     };
   });
+  // The night chart: ?view=history&range=6h|24h|3d|7d
+  if (req.query.view === "history") {
+    const range = Board.RANGES[req.query.range] ? req.query.range : "6h";
+    const ckey = range + "|" + rows.map((r) => r.ticker + ":" + r.side + ":" + r.contracts).join(",");
+    const hit = historyCache.get(ckey);
+    if (hit && Date.now() - hit.at < 45000) return res.status(200).json(hit.body);
+    try {
+      const body = await Board.nightHistory(rows, markets, legMarkets, range, getHistory, pool);
+      historyCache.set(ckey, { at: Date.now(), body });
+      if (historyCache.size > 20) historyCache.delete(historyCache.keys().next().value);
+      return res.status(200).json(body);
+    } catch (e) {
+      return res.status(502).json({ error: "history unavailable" });
+    }
+  }
+
+  await linesFor(rows, markets);
   const sum = (k) => +rows.reduce((s, r) => s + (r[k] || 0), 0).toFixed(2);
   const priced = rows.filter((r) => r.value != null);
+  const sellable = rows.reduce((s, r) => s + (r.sell && r.sell.value != null ? r.sell.value : r.result ? r.value || 0 : 0), 0);
   return res.status(200).json({
     at: Date.now(), rows, source, accountError,
-    totals: { cost: sum("cost"), value: +priced.reduce((s, r) => s + r.value, 0).toFixed(2), payout: sum("payout"), priced: priced.length, count: rows.length },
+    totals: { cost: sum("cost"), value: +priced.reduce((s, r) => s + r.value, 0).toFixed(2), payout: sum("payout"), priced: priced.length, count: rows.length, sell: +sellable.toFixed(2) },
   });
 }
 

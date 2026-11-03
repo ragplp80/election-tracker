@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/catalog.js": { "maxDuration": 300 },
-    "api/snapshot.js": { "maxDuration": 300 }
+    "api/snapshot.js": { "maxDuration": 300 },
+    "api/bets.js": { "maxDuration": 60 }
   },
   "headers": [
     { "source": "/bets.html", "headers": [

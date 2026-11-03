@@ -13,14 +13,14 @@
 :root{
   --bg:#0d1520; --surface:#141e2b; --surface2:#1a2636; --line:#243346;
   --fg:#e6ecf2; --muted:#8b9bb0; --faint:#56667a;
-  --up:#3ccf7e; --down:#f0574a; --warn:#f2b33d;
+  --up:#3ccf7e; --down:#f0574a; --warn:#f2b33d; --nob:#223043;
   --font:-apple-system,"Helvetica Neue",Arial,sans-serif;
   color-scheme:dark;
 }
 @media (prefers-color-scheme:light){:root{
   --bg:#eef1f5; --surface:#fff; --surface2:#f6f8fb; --line:#d8dee6;
   --fg:#121a24; --muted:#5a6878; --faint:#98a4b3;
-  --up:#13894a; --down:#cf2e2e; --warn:#a86a00; color-scheme:light;
+  --up:#13894a; --down:#cf2e2e; --warn:#a86a00; --nob:#dfe5ec; color-scheme:light;
 }}
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -30,14 +30,51 @@ h1{font-size:20px;margin:0;font-weight:750;letter-spacing:-.01em}
 #updated{color:var(--muted);font-size:13px}
 button{font:inherit;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
 .spacer{flex:1}
-.totals{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+.totals{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .stat .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
 .stat .v{font-size:26px;font-weight:750;font-variant-numeric:tabular-nums;margin-top:2px}
 .stat .s{color:var(--muted);font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
 h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 8px;font-weight:650}
+.pos{color:var(--up)} .neg{color:var(--down)}
+
+/* Chart + map panels */
+.panels{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:10px;margin-bottom:6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.card[hidden]{display:none}
+.chead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.chead h3{margin:0;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:650}
+.chead .big{font-size:22px;font-weight:750;font-variant-numeric:tabular-nums}
+.chead .sub{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.chips{display:flex;gap:4px;margin-left:auto}
+.chips button{padding:3px 9px;font-size:12px;border-radius:999px}
+.chips button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chartbox{position:relative}
+.chartbox svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.axis text{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.axis line{stroke:var(--line)}
+.tip{position:absolute;top:0;pointer-events:none;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.tip[hidden]{display:none}
+.tip b{font-size:13px}
+.cnote{color:var(--faint);font-size:11px;margin-top:4px}
+.mapbox svg{display:block;width:100%;height:auto}
+.mapbox path.st{stroke:var(--surface);stroke-width:1;cursor:pointer}
+.mapbox path.st.sel{stroke:var(--fg);stroke-width:2}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--muted);margin-top:6px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend svg{width:14px;height:10px}
+.mapinfo{font-size:13px;margin-top:8px;display:flex;flex-direction:column;gap:4px}
+.mapinfo .mi{display:grid;grid-template-columns:1fr auto auto;gap:10px;font-variant-numeric:tabular-nums}
+.mapinfo .mi span:nth-child(2){font-weight:700}
+.mapinfo .hint{color:var(--muted)}
+.mapinfo h4{margin:2px 0;font-size:13px}
+.natl{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.natl span{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted)}
+.natl b{color:var(--fg)}
+
+/* Tiles */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
-.tile{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--faint);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.tile{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--faint);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .tile.on{border-left-color:var(--up)} .tile.off{border-left-color:var(--down)}
 .tile.won{border-left-color:var(--up);background:color-mix(in srgb,var(--up) 10%,var(--surface))}
 .tile.lost{opacity:.6}
@@ -51,9 +88,19 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .nums div{display:flex;flex-direction:column}
 .nums small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
 .nums b{font-size:17px}
-.pos{color:var(--up)} .neg{color:var(--down)}
-.foot{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:8px}
+.foot{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .move{font-weight:700}
+.sell{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.sell b{color:var(--fg)}
+.spark{position:relative}
+.spark svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.spark .sl{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;margin-top:1px}
+.spark .sl b{color:var(--fg)}
+.line{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px}
+.line svg{display:block;width:100%;height:auto}
+.line .lt{font-size:12px;color:var(--muted);line-height:1.4}
+.line .lt b{color:var(--fg)}
+.line .lroom{font-weight:700}
 .legs{border-top:1px solid var(--line);padding-top:8px}
 .legs summary{cursor:pointer;font-size:13px;color:var(--muted);list-style:none;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .legs summary::-webkit-details-marker{display:none}
@@ -76,12 +123,13 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .lock h3{margin:0;font-size:13px;letter-spacing:.02em}
 .lock .buy{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px}
 .lock .buy b{font-variant-numeric:tabular-nums}
-.lock .go{background:var(--fg);color:var(--bg);border:0;padding:5px 10px;font-size:12px}
 .lock .sum{font-size:13px}
 .lock small{color:var(--muted);font-size:11px}
 .waitlock{color:var(--faint);font-size:11px;margin-top:4px}
 .msg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;color:var(--muted);text-align:center}
-@media (max-width:760px){.totals{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:22px}}
+@media (max-width:1100px){.totals{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:900px){.panels{grid-template-columns:1fr}}
+@media (max-width:560px){.totals{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:22px}}
 </style>
 </head>
 <body>
@@ -99,6 +147,30 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
   <button id="refresh">Refresh</button>
 </header>
 <div id="totals"></div>
+<div class="panels" id="panels" hidden>
+  <section class="card" id="chartCard" aria-label="Profit and loss over time">
+    <div class="chead">
+      <h3>Profit / loss</h3><span class="big" id="chartNow"></span><span class="sub" id="chartChange"></span>
+      <div class="chips" id="ranges" role="group" aria-label="Time range">
+        <button data-r="6h">6h</button><button data-r="24h">24h</button><button data-r="3d">3d</button><button data-r="7d">7d</button>
+      </div>
+    </div>
+    <div class="chartbox" id="chart"><div class="cnote">Loading history…</div></div>
+    <div class="cnote" id="chartNote"></div>
+  </section>
+  <section class="card" id="mapCard" aria-label="Money map">
+    <div class="chead">
+      <h3>Money map</h3><span class="sub" id="mapSub"></span>
+      <div class="chips" id="mapModes" role="group" aria-label="Map shows">
+        <button data-m="bets">My bets</button><button data-m="legs">Parlay legs</button>
+      </div>
+    </div>
+    <div class="mapbox" id="map"></div>
+    <div class="legend" id="mapLegend"></div>
+    <div class="mapinfo" id="mapInfo"></div>
+    <div class="natl" id="natl"></div>
+  </section>
+</div>
 <div id="board"><div class="msg">Loading…</div></div>
 
 <script>
@@ -109,9 +181,11 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
   const money = (v) => (v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2));
   const signed = (v) => (v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + "$" + Math.abs(v).toFixed(2));
   const cents = (p) => (p == null ? "—" : Math.round(p * 100) + "¢");
+  const pts = (v) => (Math.round(v * 10) / 10).toString();
+  const store = { get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
   const GROUP_ORDER = ["Senate", "Governor", "House", "Control", "Parlay", "State", "Other"];
-  let first = null, prev = null, data = null;   // prices when the page opened, and at the last refresh
-  window.__board = { get hedgePlan() { return hedgePlan; } };   // for tests
+  let first = null, prev = null, data = null, hist = null, mapData = null, mapTried = false, mapSel = null;
+  let range = store.get("board-range", "6h"), mapMode = store.get("board-map", "bets"), lastChartFor = 0;
   const openLegs = new Set();                    // parlays whose leg list is expanded (kept across refreshes)
   document.addEventListener("toggle", (e) => {
     const d = e.target;
@@ -121,7 +195,10 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 
   const klink = (url, text = "Kalshi ↗") => url ? `<a class="kl" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${text}</a>` : "";
   const feeFor = (n, p) => Math.ceil(0.07 * n * p * (1 - p) * 100) / 100;   // Kalshi's trading fee, rounded up to the cent
+  const timeFmt = (t, long) => new Date(t * 1000).toLocaleString([], long ? { weekday: "short", hour: "numeric" } : { hour: "numeric", minute: "2-digit" });
+  const isLong = () => range === "3d" || range === "7d";
 
+  // ---------- Parlay hedge helper ----------
   // Hedge to lock in a parlay with 1-2 legs left: buy the other side of each open leg, as many
   // contracts as the parlay pays. Then any open leg missing pays back the full amount, and if they
   // all hit the parlay pays. Worst case = payout - what the hedges cost.
@@ -171,9 +248,290 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     </details>${lockBox(r)}`;
   }
 
-  try { $("sort").value = localStorage.getItem("board-sort") || "group"; } catch (e) {}
-  $("sort").onchange = () => { try { localStorage.setItem("board-sort", $("sort").value); } catch (e) {} render(); };
-  $("refresh").onclick = () => load();
+  // ---------- Your line vs. the market ----------
+  // Words for a margin from the leader's side: +2.7 -> "Abbott +2.7", -1.5 -> "Hinojosa +1.5"
+  function lineWords(L) {
+    const who = L.who || "Leader", other = L.other || "opponent";
+    if (L.kind === "seats") {
+      const exp = `<b>${esc(who === "Democrats" ? "Dems" : who)} ~${L.median} seats</b>${L.lo != null ? ` (likely ${L.lo}–${L.hi})` : ""}`;
+      const need = L.need.op === "in" ? `${L.need.a}–${L.need.b} seats` : `outside ${L.need.a}–${L.need.b}`;
+      const room = L.room > 0 ? `${L.room} seat${L.room === 1 ? "" : "s"} inside your range` : L.room === 0 ? "right at the edge of your range" : `${-L.room} seat${L.room === -1 ? "" : "s"} outside your range`;
+      return { exp, need, room, good: L.room >= 0 };
+    }
+    if (L.kind === "share") {
+      const exp = L.median != null ? `<b>~${pts(L.median)}%</b>` : L.beyond === ">" ? `<b>${pts(L.bound)}%+</b>` : `<b>under ${pts(L.bound)}%</b>`;
+      const need = L.need.op === ">=" ? `${pts(L.need.a)}% or more` : `under ${pts(L.need.a)}%`;
+      return { exp, need, room: roomWords(L.room, "pts"), good: L.room == null ? null : L.room >= 0 };
+    }
+    const nm = (v) => (v >= 0 ? `${who} +${pts(v)}` : `${other} +${pts(-v)}`);
+    let exp;
+    if (L.median != null) exp = `<b>${esc(nm(L.median))}</b>`;
+    else if (L.beyond === ">") exp = `<b>${esc(who)} +${pts(L.bound)} or more</b>`;
+    else exp = `<b>below ${esc(nm(L.bound))}</b>`;
+    if (L.lo != null && L.hi != null && L.median != null) {
+      const same = (L.lo >= 0 && L.hi >= 0) || (L.lo < 0 && L.hi < 0);
+      const end = (v) => (same ? "+" + pts(Math.abs(v)) : nm(v));
+      exp += ` (likely ${esc(end(L.lo))}${L.loOpen ? " or less" : ""} to ${esc(end(L.hi))}${L.hiOpen ? "+" : ""})`;
+    }
+    const need = L.need.op === "<" ? `${esc(who)} under +${pts(L.need.a)}${L.need.a > 0 ? `, or ${esc(who)} loses` : ""}` : `${esc(who)} +${pts(L.need.a)} or more`;
+    let room = roomWords(L.room, "pts"), good = L.room == null ? null : L.room >= 0;
+    if (L.room == null && L.beyond) {   // the market sits past the end of the ladder
+      const beyondGood = (L.beyond === ">") === (L.need.op === ">=");
+      room = beyondGood ? "market is past your line" : "market is well past your line"; good = beyondGood;
+    }
+    return { exp, need, room, good };
+  }
+  const roomWords = (room, unit) => room == null ? "" : room > 0 ? `${pts(room)} ${unit} to spare` : room === 0 ? "right on the line" : `needs ${pts(-room)} ${unit} more`;
+
+  // A small number line: your winning zone shaded, the market's likely range as a bar, its middle as a dot,
+  // and your line as a dashed tick. Drawn to scale in a fixed-ratio SVG so circles stay round.
+  function lineSvg(L) {
+    const vals = [L.lo, L.hi, L.median, L.need.a, L.need.b, L.bound].filter((v) => v != null && isFinite(v));
+    if (L.kind === "margin") vals.push(0);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = Math.max(1, (hi - lo) * 0.15); lo -= pad; hi += pad;
+    const W = 300, H = 50, x = (v) => 6 + ((v - lo) / (hi - lo)) * (W - 12);
+    const y0 = 25;
+    const zone = (a, b) => `<rect x="${x(a).toFixed(1)}" y="14" width="${Math.max(0, x(b) - x(a)).toFixed(1)}" height="22" rx="3" fill="var(--up)" fill-opacity=".16"/>`;
+    let z = "";
+    const op = L.need.op, a = L.need.a, b = L.need.b;
+    if (op === "<") z = zone(lo, a);
+    else if (op === ">=") z = zone(a, hi);
+    else if (op === "in") z = zone(a, b + 1);
+    else if (op === "out") z = zone(lo, a) + zone(b + 1, hi);
+    const band = L.lo != null && L.hi != null ? `<rect x="${x(L.lo).toFixed(1)}" y="${y0 - 3}" width="${Math.max(2, x(L.hi) - x(L.lo)).toFixed(1)}" height="6" rx="3" fill="var(--muted)" fill-opacity=".45"/>` : "";
+    const tickXs = [a, op === "in" || op === "out" ? b + 1 : null].filter((v) => v != null);
+    const ticks = tickXs.map((v) => `<line x1="${x(v).toFixed(1)}" x2="${x(v).toFixed(1)}" y1="11" y2="39" stroke="var(--fg)" stroke-width="1.5" stroke-dasharray="3 2"/>`).join("");
+    // Labels: "your line" above the dashed tick(s), the market's number under its dot (two rows, so they never collide)
+    const anchor = (px) => (px < 40 ? "start" : px > W - 40 ? "end" : "middle");
+    const lineX = tickXs.length === 2 ? (x(tickXs[0]) + x(tickXs[1])) / 2 : x(tickXs[0]);
+    const lineLbl = `<text x="${lineX.toFixed(1)}" y="8" font-size="10" text-anchor="${anchor(lineX)}" fill="var(--fg)">your line${L.kind === "seats" ? "" : ` ${L.kind === "share" ? pts(a) + "%" : pts(a)}`}</text>`;
+    const zero = L.kind === "margin" && lo < 0 && hi > 0 ? `<line x1="${x(0).toFixed(1)}" x2="${x(0).toFixed(1)}" y1="19" y2="31" stroke="var(--faint)" stroke-width="1"/>` : "";
+    const mx = L.median != null ? x(L.median) : L.beyond === ">" ? x(hi) - 6 : x(lo) + 6;
+    const mval = L.median != null ? (L.kind === "share" ? pts(L.median) + "%" : L.kind === "seats" ? String(L.median) : pts(L.median)) : "";
+    const midLbl = L.median != null || L.beyond ? `<text x="${mx.toFixed(1)}" y="48" font-size="10" text-anchor="${anchor(mx)}" fill="var(--muted)">market ${L.median != null ? mval : L.beyond === ">" ? "beyond →" : "← beyond"}</text>` : "";
+    const mid = L.median != null ? `<circle cx="${mx.toFixed(1)}" cy="${y0}" r="5" fill="var(--fg)" stroke="var(--surface)" stroke-width="2"/>`
+      : L.beyond ? `<path d="M${(L.beyond === ">" ? x(hi) - 2 : x(lo) + 2).toFixed(1)},${y0} l${L.beyond === ">" ? -8 : 8},-5 v10 z" fill="var(--fg)"/>` : "";
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Your line compared with the market"><line x1="6" x2="${W - 6}" y1="${y0}" y2="${y0}" stroke="var(--line)" stroke-width="2"/>${z}${zero}${band}${ticks}${mid}${lineLbl}${midLbl}</svg>`;
+  }
+
+  function lineBlock(r) {
+    const L = r.line;
+    if (!L || !L.need) return "";
+    const w = lineWords(L);
+    return `<div class="line">${lineSvg(L)}
+      <div class="lt">Market expects ${w.exp}<br>You need <b>${w.need}</b>${w.room ? ` · <span class="lroom ${w.good ? "pos" : w.good === false ? "neg" : ""}">${w.room}</span>` : ""}</div>
+    </div>`;
+  }
+
+  // ---------- Charts (big P/L chart and per-bet sparklines) ----------
+  // A line over the history timeline. Returns svg markup; hover is wired separately.
+  function pathFor(vals, x, y) {
+    let d = "", pen = false;
+    vals.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1); pen = true; });
+    return d;
+  }
+
+  function sparkFor(r) {
+    if (!hist || !hist.t) return "";
+    const s = r.legs ? hist.parlays && hist.parlays[r.ticker] : hist.bets && hist.bets[r.ticker];
+    if (!s || s.filter((v) => v != null).length < 2) return "";
+    // Scaled to this bet's own moves (at least a 10¢ window), so a 5¢ swing is visible
+    const W = 300, H = 36, n = s.length, known = s.filter((v) => v != null);
+    let lo = Math.min(...known), hi = Math.max(...known);
+    if (hi - lo < 0.1) { const m = (hi + lo) / 2; lo = m - 0.05; hi = m + 0.05; }
+    const x = (i) => (i / (n - 1)) * W, y = (v) => H - 3 - ((v - lo) / (hi - lo)) * (H - 6);
+    const half = r.legs || lo > 0.5 || hi < 0.5 ? "" : `<line x1="0" x2="${W}" y1="${y(0.5).toFixed(1)}" y2="${y(0.5).toFixed(1)}" stroke="var(--faint)" stroke-dasharray="2 3" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    const lastI = s.length - 1, lv = s[lastI], fv = s.find((v) => v != null);
+    const color = r.legs ? "var(--fg)" : lv >= 0.5 ? "var(--up)" : "var(--down)";
+    const what = r.legs ? "All-hit estimate" : "Chance";
+    return `<div class="spark" data-t="${esc(r.ticker)}" data-what="${what}">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px" aria-label="${what} over ${range}">${half}<path d="${pathFor(s, x, y)}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><line class="sx" x1="0" x2="0" y1="0" y2="${H}" stroke="var(--muted)" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/></svg>
+      <div class="sl"><span class="sl-l">${what} · ${range} ago <b>${cents(fv)}</b></span><span class="sl-r">now <b>${cents(lv)}</b></span></div>
+    </div>`;
+  }
+
+  function sparkHover(e) {
+    const box = e.target.closest && e.target.closest(".spark");
+    if (!box || !hist) return;
+    const svg = box.querySelector("svg"), rect = svg.getBoundingClientRect();
+    const r = data && data.rows.find((x) => x.ticker === box.dataset.t);
+    const s = r && (r.legs ? hist.parlays[r.ticker] : hist.bets[r.ticker]);
+    if (!s || !rect.width) return;
+    const i = Math.max(0, Math.min(s.length - 1, Math.round(((e.clientX - rect.left) / rect.width) * (s.length - 1))));
+    const sx = svg.querySelector(".sx");
+    sx.setAttribute("x1", (i / (s.length - 1)) * 300); sx.setAttribute("x2", (i / (s.length - 1)) * 300); sx.setAttribute("visibility", "visible");
+    box.querySelector(".sl-l").innerHTML = `${box.dataset.what} · ${esc(timeFmt(hist.t[i], isLong()))} <b>${cents(s[i])}</b>`;
+  }
+  function sparkLeave(e) {
+    const box = e.target.closest && e.target.closest(".spark");
+    if (!box || box.contains(e.relatedTarget)) return;
+    const r = data && data.rows.find((x) => x.ticker === box.dataset.t);
+    const s = r && hist && (r.legs ? hist.parlays[r.ticker] : hist.bets[r.ticker]);
+    if (!s) return;
+    box.querySelector(".sx").setAttribute("visibility", "hidden");
+    box.querySelector(".sl-l").innerHTML = `${box.dataset.what} · ${range} ago <b>${cents(s.find((v) => v != null))}</b>`;
+  }
+  $("board").addEventListener("pointermove", sparkHover);
+  $("board").addEventListener("pointerout", sparkLeave);
+
+  // Big chart: profit/loss over time, gains tinted green above zero and losses red below.
+  function drawChart() {
+    const el = $("chart");
+    if (!hist || !hist.t || !hist.pl) return;
+    const T = hist.t, P = hist.pl, n = T.length;
+    const W = Math.max(320, Math.round(el.clientWidth || 600)), L = 46, R = 58, Tm = 10, B = 24;
+    // Side by side with the map: fill the card to the map's height; stacked: a ratio of the width
+    const mc = $("mapCard"), sideBySide = mc && !mc.hidden && window.innerWidth > 900 && mc.offsetHeight > 0;
+    const H = Math.round(sideBySide ? Math.max(200, Math.min(440, mc.offsetHeight - 92)) : Math.max(200, Math.min(320, W * 0.45)));
+    lastChartFor = sideBySide ? mc.offsetHeight : 0;
+    let lo = Math.min(0, ...P), hi = Math.max(0, ...P);
+    if (hi - lo < 2) { hi += 1; lo -= 1; }
+    const span = hi - lo; lo -= span * 0.08; hi += span * 0.08;
+    const x = (i) => L + (i / (n - 1)) * (W - L - R), y = (v) => Tm + ((hi - v) / (hi - lo)) * (H - Tm - B);
+    // y ticks: ~4 round dollar steps
+    const raw = (hi - lo) / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw;
+    let yt = "";
+    for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) yt += `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke-opacity="${Math.abs(v) < 1e-9 ? 0 : 0.6}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${v < 0 ? "−" : ""}$${Math.abs(v).toFixed(step < 1 ? 2 : 0)}</text>`;
+    // x ticks: 4 evenly spaced times
+    let xt = "";
+    const nt = W < 520 ? 2 : 3;   // fewer, shorter time labels on a phone
+    const short = (t) => new Date(t * 1000).toLocaleString([], isLong() ? { weekday: "short" } : { hour: "numeric" });
+    for (let k = 0; k <= nt; k++) { const i = Math.round((k / nt) * (n - 1)); xt += `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="${k === 0 ? "start" : k === nt ? "end" : "middle"}">${esc(k === nt ? "now" : W < 520 ? short(T[i]) : timeFmt(T[i], isLong()))}</text>`; }
+    const line = pathFor(P, x, y);
+    const area = `${line}L${x(n - 1).toFixed(1)},${y(0).toFixed(1)}L${x(0).toFixed(1)},${y(0).toFixed(1)}Z`;
+    const z = y(0), last = P[n - 1];
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Profit and loss over the last ${range}">
+      <defs><clipPath id="cAbove"><rect x="0" y="0" width="${W}" height="${z.toFixed(1)}"/></clipPath><clipPath id="cBelow"><rect x="0" y="${z.toFixed(1)}" width="${W}" height="${(H - z).toFixed(1)}"/></clipPath></defs>
+      <g class="axis">${yt}${xt}</g>
+      <path d="${area}" fill="var(--up)" fill-opacity=".14" clip-path="url(#cAbove)"/>
+      <path d="${area}" fill="var(--down)" fill-opacity=".14" clip-path="url(#cBelow)"/>
+      <line x1="${L}" x2="${W - R}" y1="${z.toFixed(1)}" y2="${z.toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" stroke-width="1"/>
+      <path d="${line}" fill="none" stroke="var(--fg)" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="${x(n - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4.5" fill="${last >= 0 ? "var(--up)" : "var(--down)"}" stroke="var(--surface)" stroke-width="2"/>
+      <text x="${(x(n - 1) + 8).toFixed(1)}" y="${(y(last) - 8).toFixed(1)}" font-size="12" font-weight="700" fill="var(--fg)">${esc(signed(last))}</text>
+      <g id="xh" visibility="hidden"><line id="xhl" y1="${Tm}" y2="${H - B}" stroke="var(--muted)" stroke-width="1"/><circle id="xhc" r="4.5" fill="var(--fg)" stroke="var(--surface)" stroke-width="2"/></g>
+      <rect id="xhit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/>
+    </svg><div class="tip" id="tip" hidden></div>`;
+    const svg = el.querySelector("svg"), tip = $("tip");
+    const move = (e) => {
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      const sx = ((e.clientX - rect.left) / rect.width) * W;
+      const i = Math.max(0, Math.min(n - 1, Math.round(((sx - L) / (W - L - R)) * (n - 1))));
+      $("xhl").setAttribute("x1", x(i)); $("xhl").setAttribute("x2", x(i));
+      $("xhc").setAttribute("cx", x(i)); $("xhc").setAttribute("cy", y(P[i]));
+      $("xh").setAttribute("visibility", "visible");
+      tip.innerHTML = `${esc(timeFmt(T[i], isLong()))}<br><b class="${P[i] >= 0 ? "pos" : "neg"}">${esc(signed(P[i]))}</b> · worth ${esc(money(hist.worth[i]))}`;
+      tip.hidden = false;
+      const px = (x(i) / W) * rect.width;
+      tip.style.left = Math.min(Math.max(0, px - tip.offsetWidth / 2), rect.width - tip.offsetWidth) + "px";
+    };
+    const leave = () => { $("xh").setAttribute("visibility", "hidden"); tip.hidden = true; };
+    svg.addEventListener("pointermove", move); svg.addEventListener("pointerdown", move); svg.addEventListener("pointerleave", leave);
+    const firstPl = P.find((v) => v != null) ?? 0, ch = +(last - firstPl).toFixed(2);
+    $("chartNow").innerHTML = `<span class="${last >= 0 ? "pos" : "neg"}">${esc(signed(last))}</span>`;
+    $("chartChange").innerHTML = `${ch >= 0 ? "▲" : "▼"} ${esc(money(Math.abs(ch)))} in the last ${range}`;
+    const parl = data && data.rows.some((r) => r.legs);
+    $("chartNote").textContent = "Your current bets, valued at each moment's market price." + (parl ? " Parlays are held at their last trade (no one is quoting them)." : "") + (hist.missing && hist.missing.length ? ` ${hist.missing.length} market${hist.missing.length > 1 ? "s" : ""} had no price history, so they're flat.` : "");
+  }
+
+  // ---------- Money map ----------
+  // Each state: money at stake in it and how it's going. Fill = on track / toss-up / behind (behind is
+  // also hatched, so it never depends on red vs green alone). Darker = more money (or more parlay legs).
+  function mapGroups() {
+    const g = new Map(), natl = [];
+    const add = (st, item) => { if (!g.has(st)) g.set(st, []); g.get(st).push(item); };
+    for (const r of data.rows) {
+      if (mapMode === "bets") {
+        if (r.legs) continue;
+        if (r.st) add(r.st, { label: r.label, price: r.price, cost: r.cost, value: r.value });
+        else natl.push({ label: r.label, price: r.price });
+      } else if (r.legs) {
+        for (const l of r.legs) {
+          const item = { label: `${l.race}: ${l.name}`, price: l.price, parlay: r.label, legs: 1 };
+          if (l.st) add(l.st, item); else natl.push(item);
+        }
+      }
+    }
+    return { g, natl };
+  }
+  function stateLook(items) {
+    const w = items.reduce((s, i) => s + (mapMode === "bets" ? i.cost || 0 : 1), 0) || 1;
+    const avg = items.reduce((s, i) => s + (i.price ?? 0.5) * (mapMode === "bets" ? i.cost || 0 : 1), 0) / w;
+    const chance = mapMode === "bets" ? avg : Math.min(...items.map((i) => i.price ?? 0.5));   // legs: the weakest one decides
+    const status = chance >= 0.55 ? "on" : chance <= 0.45 ? "off" : "toss";
+    const weight = mapMode === "bets" ? items.reduce((s, i) => s + (i.cost || 0), 0) : items.length;
+    const level = mapMode === "bets" ? (weight >= 20 ? 3 : weight >= 10 ? 2 : 1) : Math.min(3, weight);
+    return { status, level, chance, weight };
+  }
+  const fillFor = (s) => s ? `color-mix(in srgb, var(--${s.status === "on" ? "up" : s.status === "off" ? "down" : "warn"}) ${[0, 38, 62, 88][s.level]}%, var(--nob))` : "var(--nob)";
+
+  async function loadMap() {
+    if (mapTried) return; mapTried = true;
+    try {
+      const r = await fetch("/map2026.json");
+      const j = r.ok ? await r.json() : null;
+      if (j && j.states && j.w) { mapData = j; drawMap(); } else $("mapCard").hidden = true;
+    } catch (e) { $("mapCard").hidden = true; }
+  }
+
+  function drawMap() {
+    if (!mapData || !data) return;
+    const { g, natl } = mapGroups();
+    const looks = new Map([...g].map(([st, items]) => [st, stateLook(items)]));
+    let body = `<defs><pattern id="mHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="var(--bg)" stroke-width="1.4" stroke-opacity=".55"/></pattern></defs>`;
+    let hatch = "";
+    for (const [st, v] of Object.entries(mapData.states)) {
+      const L = looks.get(st);
+      body += `<path class="st${mapSel === st ? " sel" : ""}" data-st="${st}" d="${v.d}" style="fill:${fillFor(L)}"><title>${esc(v.n)}</title></path>`;
+      if (L && L.status === "off") hatch += `<path d="${v.d}" fill="url(#mHatch)" style="pointer-events:none"/>`;
+    }
+    $("map").innerHTML = `<svg viewBox="0 0 ${mapData.w} ${mapData.h}" role="img" aria-label="Map of where your money is">${body}${hatch}</svg>`;
+    const sw = (s, l) => `<svg viewBox="0 0 14 10"><rect width="14" height="10" rx="2" style="fill:${fillFor({ status: s, level: l })}"/>${s === "off" ? `<rect width="14" height="10" fill="url(#mHatch)"/>` : ""}</svg>`;
+    $("mapLegend").innerHTML = `<span>${sw("on", 2)}On track</span><span>${sw("toss", 2)}Toss-up</span><span>${sw("off", 2)}Behind</span><span><svg viewBox="0 0 14 10"><rect width="14" height="10" rx="2" style="fill:var(--nob)"/></svg>${mapMode === "bets" ? "No bet" : "Not in a parlay"}</span><span>Darker = ${mapMode === "bets" ? "more money" : "more legs"}</span>`;
+    const stake = [...g.values()].flat().reduce((s, i) => s + (i.cost || 0), 0);
+    $("mapSub").textContent = mapMode === "bets" ? `${g.size} states · ${money(stake)} at stake` : `${g.size} states in your parlays`;
+    $("natl").innerHTML = natl.length ? `<span><b>National:</b></span>` + natl.map((i) => `<span>${esc(i.label)} · <b>${cents(i.price)}</b></span>`).join("") : "";
+    for (const b of $("mapModes").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.m === mapMode));
+    showState(mapSel, g, looks);
+    const mc = $("mapCard");   // the chart matches the map card's height when they sit side by side
+    if (hist && window.innerWidth > 900 && mc.offsetHeight && Math.abs(mc.offsetHeight - lastChartFor) > 4) requestAnimationFrame(drawChart);
+  }
+
+  function showState(st, g, looks) {
+    if (!g) { const mg = mapGroups(); g = mg.g; looks = new Map([...g].map(([s, items]) => [s, stateLook(items)])); }
+    const box = $("mapInfo");
+    if (!st || !g.has(st)) {
+      box.innerHTML = `<div class="hint">${g.size ? "Tap a state to see what you have riding there." : "Nothing to show on the map yet."}</div>`;
+      return;
+    }
+    const items = g.get(st), L = looks.get(st), name = mapData.states[st] ? mapData.states[st].n : st;
+    const word = L.status === "on" ? "On track" : L.status === "off" ? "Behind" : "Toss-up";
+    box.innerHTML = `<h4>${esc(name)} · ${word}${mapMode === "bets" ? ` · ${money(L.weight)} at stake` : ""}</h4>` + items.map((i) =>
+      `<div class="mi"><span>${esc(i.label)}${i.parlay ? ` <span class="hint">(${esc(i.parlay)})</span>` : ""}</span><span>${cents(i.price)}</span><span class="${i.value != null ? (i.value - i.cost >= 0 ? "pos" : "neg") : ""}">${i.value != null ? signed(+(i.value - i.cost).toFixed(2)) : ""}</span></div>`).join("");
+  }
+
+  $("map").addEventListener("click", (e) => {
+    const p = e.target.closest && e.target.closest("path[data-st]");
+    mapSel = p ? (mapSel === p.dataset.st ? null : p.dataset.st) : null;
+    drawMap();
+  });
+  $("mapModes").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-m]"); if (!b) return;
+    mapMode = b.dataset.m; store.set("board-map", mapMode); mapSel = null; drawMap();
+  });
+
+  // ---------- Tiles ----------
+  function sellLine(r) {
+    if (r.legs) return `<div class="sell">Sell now: <b>no buyers</b> (nobody is bidding on this parlay)</div>`;
+    const s = r.sell;
+    if (!s || s.settled || r.result) return "";
+    if (s.noBuyers) return `<div class="sell">Sell now: <b>no buyers</b> right now</div>`;
+    if (s.value == null) return "";
+    const d = +(s.value - r.cost).toFixed(2);
+    return `<div class="sell">Sell now: <b>${money(s.value)}</b> at ${cents(s.bid)} after fee · <span class="${d >= 0 ? "pos" : "neg"}">${signed(d)}</span> vs paid</div>`;
+  }
 
   function tile(r) {
     const pl = r.value == null ? null : +(r.value - r.cost).toFixed(2);
@@ -182,7 +540,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     const was = first && first[r.ticker], last = prev && prev[r.ticker];
     const dOpen = was != null && r.price != null ? Math.round((r.price - was) * 100) : 0;
     const dLast = last != null && r.price != null ? Math.round((r.price - last) * 100) : 0;
-    const move = dOpen ? `<span class="move ${dOpen > 0 ? "pos" : "neg"}">${dOpen > 0 ? "▲" : "▼"}${Math.abs(dOpen)}¢ today</span>` : "";
+    const move = dOpen ? `<span class="move ${dOpen > 0 ? "pos" : "neg"}">${dOpen > 0 ? "▲" : "▼"}${Math.abs(dOpen)}¢ since you opened this</span>` : "";
     const flash = dLast ? ` · <span class="${dLast > 0 ? "pos" : "neg"}">${dLast > 0 ? "+" : "−"}${Math.abs(dLast)}¢ just now</span>` : "";
     const state = settled ? (r.price === 1 ? "WON" : "Lost") : r.status === "unknown" ? "No price" : r.price >= 0.5 ? "On track" : "Behind";
     return `<div class="tile ${cls}">
@@ -194,10 +552,21 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
         <div><small>P/L</small><b class="${pl > 0 ? "pos" : pl < 0 ? "neg" : ""}">${signed(pl)}</b></div>
         <div><small>Pays if wins</small><b>${money(r.payout)}</b></div>
       </div>
+      ${sellLine(r)}
+      ${sparkFor(r)}
       <div class="foot"><span>${state} · paid ${money(r.cost)}${flash}</span>${move}</div>
+      ${lineBlock(r)}
       ${legsBlock(r)}
     </div>`;
   }
+
+  try { $("sort").value = store.get("board-sort", "group"); } catch (e) {}
+  $("sort").onchange = () => { store.set("board-sort", $("sort").value); render(); };
+  $("refresh").onclick = () => { load(); loadHistory(true); };
+  $("ranges").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-r]"); if (!b) return;
+    range = b.dataset.r; store.set("board-range", range); loadHistory(true);
+  });
 
   function render() {
     if (!data) return;
@@ -205,13 +574,17 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     const t = data.totals, pl = +(t.value - t.cost).toFixed(2);
     const on = rows.filter((r) => r.price != null && r.price >= 0.5).length;
     const best = rows.filter((r) => r.price != null && r.price >= 0.5).reduce((s, r) => s + r.payout, 0);
+    const sellD = t.sell != null ? +(t.sell - t.cost).toFixed(2) : null;
     $("totals").innerHTML = `<div class="totals">
       <div class="stat"><div class="k">Paid</div><div class="v">${money(t.cost)}</div><div class="s">${t.count} positions</div></div>
       <div class="stat"><div class="k">Worth now</div><div class="v">${money(t.value)}</div><div class="s">at current prices</div></div>
+      <div class="stat"><div class="k">Sell now</div><div class="v">${money(t.sell)}</div><div class="s">${sellD == null ? "" : `cash out now, after fees · <span class="${sellD >= 0 ? "pos" : "neg"}">${signed(sellD)}</span>${rows.some((r) => r.legs) ? "<br>parlays have no buyers" : ""}`}</div></div>
       <div class="stat"><div class="k">Profit / loss</div><div class="v ${pl > 0 ? "pos" : pl < 0 ? "neg" : ""}">${signed(pl)}</div><div class="s">${t.cost ? ((pl / t.cost) * 100).toFixed(1) + "%" : ""}</div></div>
       <div class="stat"><div class="k">On track</div><div class="v">${on} / ${t.count}</div><div class="s">would pay ${money(best)}</div></div>
       <div class="stat"><div class="k">If all win</div><div class="v">${money(t.payout)}</div><div class="s">max payout</div></div>
     </div>`;
+    $("panels").hidden = false;
+    for (const b of $("ranges").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.r === range));
     const how = $("sort").value;
     if (how === "pl") {
       rows.sort((a, b) => ((b.value ?? b.cost) - b.cost) - ((a.value ?? a.cost) - a.cost));
@@ -223,6 +596,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       const groups = [...new Set(rows.map((r) => r.group))].sort((a, b) => (GROUP_ORDER.indexOf(a) + 99) % 99 - (GROUP_ORDER.indexOf(b) + 99) % 99);
       $("board").innerHTML = groups.map((g) => `<h2>${esc(g)}</h2><div class="grid">${rows.filter((r) => r.group === g).map(tile).join("")}</div>`).join("");
     }
+    drawMap(); loadMap();
   }
 
   async function load() {
@@ -240,13 +614,38 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       const where = data.source === "account" ? "Live from your Kalshi account" : data.accountError ? "Kalshi account unreachable — showing saved list" : "From saved list";
       $("updated").textContent = "Updated " + new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) + " · " + where + (data.totals.priced < data.totals.count ? ` · ${data.totals.count - data.totals.priced} without a price` : "");
       render();
+      drawChart();
     } catch (e) {
       $("updated").textContent = "Offline — retrying";
     }
   }
+
+  let histBusy = false, histFor = null;
+  async function loadHistory(force) {
+    if (!key || (histBusy && !force)) return;
+    histBusy = true;
+    const want = range;
+    if (force && histFor !== want) $("chart").innerHTML = `<div class="cnote">Loading ${esc(want)} of history…</div>`;
+    try {
+      const r = await fetch(`/api/bets?k=${encodeURIComponent(key)}&view=history&range=${encodeURIComponent(want)}`, { cache: "no-store" });
+      const j = r.ok ? await r.json() : null;
+      if (want !== range) return;                       // the range changed while this was loading
+      if (j && Array.isArray(j.t) && Array.isArray(j.pl)) { hist = j; histFor = want; drawChart(); render(); }
+      else if (!hist) $("chart").innerHTML = `<div class="cnote">History isn't available right now. It'll retry.</div>`;
+    } catch (e) {
+      if (!hist) $("chart").innerHTML = `<div class="cnote">History isn't available right now. It'll retry.</div>`;
+    } finally { histBusy = false; }
+  }
+
+  let rs = null;
+  window.addEventListener("resize", () => { clearTimeout(rs); rs = setTimeout(drawChart, 150); });
+  window.__board = { get hedgePlan() { return hedgePlan; }, get lineWords() { return lineWords; } };   // for tests
+
   load();
+  loadHistory(true);
   setInterval(load, 60000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  setInterval(() => loadHistory(false), 120000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); loadHistory(false); } });
 })();
 </script>
 </body>

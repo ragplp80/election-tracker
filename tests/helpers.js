@@ -82,6 +82,11 @@ function fakeKalshi(board, log = []) {
       for (const evs of Object.values(board.events)) for (const e of evs) for (const m of e.markets) if (want.has(m.ticker)) out.push({ ...m, event_ticker: e.event_ticker });
       return json({ markets: out });
     }
+    const one = p.match(/^\/events\/([^/]+)$/);   // one event by ticker (the board reads margin ladders this way)
+    if (one) {
+      for (const evs of Object.values(board.events)) for (const e of evs) if (e.event_ticker === one[1]) return json({ event: { ...e, markets: e.markets.map((m) => ({ ...m, event_ticker: e.event_ticker })) }, markets: [] });
+      return json({ error: "not found" }, 404);
+    }
     const cm = p.match(/^\/series\/([^/]+)\/markets\/([^/]+)\/candlesticks$/);
     if (cm) {
       const tk = cm[2], s0 = +u.searchParams.get("start_ts"), e0 = +u.searchParams.get("end_ts"), per = +u.searchParams.get("period_interval") * 60;
