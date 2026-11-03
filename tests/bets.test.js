@@ -141,6 +141,7 @@ test("bets: if the account call fails, falls back to the saved list", withAccoun
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.source, "saved");
   assert.match(res.body.accountError, /401/);
+  assert.match(res.body.accountError, /external-api/, "tries the newer host too");
   assert.equal(res.body.rows.length, 3);
   assert.equal(res.body.rows[0].label, "TX Sen: Talarico");
 }));

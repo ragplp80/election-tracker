@@ -89,18 +89,31 @@ function signRequest(key, ts, method, path) {
   return sig.toString("base64");
 }
 
+// Kalshi serves account calls on its newer host too; try each, and keep Kalshi's reason on failure.
+const ACCOUNT_HOSTS = [KALSHI_HOST, "https://external-api.kalshi.com"];
+
 async function signedGet(keyId, key, path) {
-  const ts = Date.now();
-  const r = await fetch(KALSHI_HOST + API_PREFIX + path, {
-    headers: {
-      accept: "application/json",
-      "KALSHI-ACCESS-KEY": keyId,
-      "KALSHI-ACCESS-TIMESTAMP": String(ts),
-      "KALSHI-ACCESS-SIGNATURE": signRequest(key, ts, "GET", API_PREFIX + path),
-    },
-  });
-  if (!r.ok) throw new Error("Kalshi account HTTP " + r.status);
-  return r.json();
+  const reasons = [];
+  for (const host of ACCOUNT_HOSTS) {
+    const ts = Date.now();
+    let r;
+    try {
+      r = await fetch(host + API_PREFIX + path, {
+        headers: {
+          accept: "application/json",
+          "KALSHI-ACCESS-KEY": keyId,
+          "KALSHI-ACCESS-TIMESTAMP": String(ts),
+          "KALSHI-ACCESS-SIGNATURE": signRequest(key, ts, "GET", API_PREFIX + path),
+        },
+      });
+    } catch (e) { reasons.push(new URL(host).hostname + ": unreachable"); continue; }
+    if (r.ok) return r.json();
+    let why = "";
+    try { const b = await r.json(); const e = b.error || b; why = [e.code, e.message, e.details].filter(Boolean).join(" ").slice(0, 120); } catch (e) {}
+    reasons.push(`${new URL(host).hostname}: HTTP ${r.status}${why ? " " + why : ""}`);
+    if (r.status !== 401 && r.status !== 403 && r.status !== 404) break;
+  }
+  throw new Error("Kalshi account " + reasons.join("; "));
 }
 
 const dollars = (m, name) => {
