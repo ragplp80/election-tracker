@@ -127,7 +127,10 @@ const dollars = (m, name) => {
 
 // Every open position on the account: [{ t, side, n, cost }]
 async function accountPositions() {
-  const keyId = (process.env.KALSHI_KEY_ID || "").trim();
+  // Tolerate quotes, brackets or a label pasted around the ID: use the ID itself if it's in there
+  const rawId = (process.env.KALSHI_KEY_ID || "").trim();
+  const found = rawId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  const keyId = found ? found[0] : rawId.replace(/^["'\[\(<\s]+|["'\]\)>\s]+$/g, "");
   if (!keyId || !process.env.KALSHI_PRIVATE_KEY) return null;
   const key = loadPrivateKey(process.env.KALSHI_PRIVATE_KEY);
   const out = [];
@@ -207,7 +210,7 @@ async function handler(req, res) {
     const live = await accountPositions();
     if (live) { positions = mergePositions(live, saved || []); source = "account"; }
   } catch (e) {
-    accountError = String(e.message || e).slice(0, 300);   // never includes key material
+    accountError = String(e.message || e).slice(0, 500);   // never includes key material
   }
   if (positions === null) return res.status(500).json({ error: "BETS_POSITIONS is not valid JSON", accountError });
 

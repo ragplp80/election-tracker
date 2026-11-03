@@ -63,7 +63,7 @@ test("bets: bad settings JSON is reported, not crashed on", withEnv({ BETS_KEY: 
 const crypto = require("crypto");
 
 // A fake Kalshi account that checks every signature with the matching public key
-function withAccount({ keyType = "rsa", pemTransform = (x) => x, positions, status = 200, saved = POS }, fn) {
+function withAccount({ keyType = "rsa", pemTransform = (x) => x, keyId = "8f2a1c3e-1111-4a2b-9c3d-0123456789ab", positions, status = 200, saved = POS }, fn) {
   return async () => {
     const pair = keyType === "rsa"
       ? crypto.generateKeyPairSync("rsa", { modulusLength: 2048 })
@@ -71,7 +71,7 @@ function withAccount({ keyType = "rsa", pemTransform = (x) => x, positions, stat
     const pem = pair.privateKey.export({ type: keyType === "rsa" ? "pkcs1" : "pkcs8", format: "pem" });
     const names = ["BETS_KEY", "BETS_POSITIONS", "KALSHI_KEY_ID", "KALSHI_PRIVATE_KEY"];
     const old = Object.fromEntries(names.map((k) => [k, process.env[k]]));
-    Object.assign(process.env, { BETS_KEY: KEY, BETS_POSITIONS: saved, KALSHI_KEY_ID: "kid-123", KALSHI_PRIVATE_KEY: pemTransform(pem) });
+    Object.assign(process.env, { BETS_KEY: KEY, BETS_POSITIONS: saved, KALSHI_KEY_ID: keyId, KALSHI_PRIVATE_KEY: pemTransform(pem) });
     const restore = useFakeKalshi(defaultBoard(), []);
     const inner = global.fetch, seen = [];
     global.fetch = async (url, opts) => {
@@ -107,7 +107,7 @@ test("bets: reads live positions from the account with a valid RSA signature", w
   const res = await callHandler(bets, { k: KEY });
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.source, "account");
-  assert.ok(seen.length >= 1 && seen.every((s) => s.ok && s.keyId === "kid-123"), "signed with the key id");
+  assert.ok(seen.length >= 1 && seen.every((s) => s.ok && s.keyId === "8f2a1c3e-1111-4a2b-9c3d-0123456789ab"), "signed with the key id");
   assert.match(seen[0].search, /count_filter=position/);
   const byT = Object.fromEntries(res.body.rows.map((r) => [r.ticker, r]));
   assert.equal(res.body.rows.length, 3, "sold/closed saved positions drop off");
@@ -150,4 +150,10 @@ test("bets: an unreadable private key falls back without leaking it", withAccoun
   const res = await callHandler(bets, { k: KEY });
   assert.equal(res.body.source, "saved");
   assert.ok(!/not a key/.test(JSON.stringify(res.body)), "key text never echoed");
+}));
+
+test("bets: a Key ID saved with quotes around it still works", withAccount({ positions: LIVE, keyId: '"8f2a1c3e-1111-4a2b-9c3d-0123456789ab"' }, async (seen) => {
+  const res = await callHandler(bets, { k: KEY });
+  assert.equal(res.body.source, "account");
+  assert.equal(seen[0].keyId, "8f2a1c3e-1111-4a2b-9c3d-0123456789ab", "quotes stripped before sending");
 }));
