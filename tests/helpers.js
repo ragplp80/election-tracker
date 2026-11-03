@@ -100,6 +100,7 @@ function fakeKalshi(board, log = []) {
 // Point Node's global fetch (used by the server functions) at the fake Kalshi.
 function useFakeKalshi(board, log) {
   require("../api/_lib.js").resetCatalogCache();   // each test starts with no kept race list
+  require("../api/history.js").reset();            // ...and no stored price history
   const handle = fakeKalshi(board, log);
   const realFetch = global.fetch;
   global.fetch = async (url, opts) => {
@@ -150,6 +151,12 @@ function loadPage(opts = {}) {
       return resp(r.statusCode, r.body);
     }
     if (/^\/?map2026\.json$/.test(u)) return { ok: true, status: 200, headers: { get: () => null }, json: async () => JSON.parse(fs.readFileSync(path.join(ROOT, "map2026.json"), "utf8")) };
+    if (u.startsWith("/api/history?")) {
+      log.push("PAGE /api/history");
+      if (opts.history === "fail") return resp(502, { error: "down" });
+      const r = await callHandler(require(path.join(ROOT, "api/history.js")), Object.fromEntries(new URL("http://x" + u).searchParams));
+      return resp(r.statusCode, r.body);
+    }
     if (u.startsWith("/api/news?")) {
       const r = await callHandler(require(path.join(ROOT, "api/news.js")), Object.fromEntries(new URL("http://x" + u).searchParams));
       return resp(r.statusCode, r.body);

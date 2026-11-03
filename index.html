@@ -1176,6 +1176,16 @@ function compactHistory(h,now){
 // A device that wasn't open all day has gaps in its history, so trend lines, the move column and
 // the daily baseline would be blank. Fill them from Kalshi's price history: minute prices for the
 // last 3 hours, hourly prices back past midnight (and "since last look"). Skips what's already here.
+// Price history for one market. The server keeps every candle it has fetched, shared by all
+// devices, and only asks Kalshi for what's new, so older history is never downloaded twice.
+// Falls back to asking Kalshi directly (through the relay) if the history store is unavailable.
+async function candles(series,ticker,start,end,period){
+  try{
+    const r=await fetch(`/api/history?series=${encodeURIComponent(series)}&ticker=${encodeURIComponent(ticker)}&period=${period}&start=${start}&end=${end}`,{headers:{accept:"application/json"}});
+    if(r.ok)return await r.json();
+  }catch(e){}
+  return kget(`/series/${series}/markets/${ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${period}`);
+}
 const BF_HOURS=3;
 const bf={running:false,done:0,total:0};
 function raceValueFrom(r,priceAt){
@@ -1214,7 +1224,7 @@ function needsHourly(r,now){
 const neededOuts=r=>r.multi||r.d!=null?r.outs.filter(o=>r.multi||o.party==="D"||o.party==="R"):[r.leader];
 async function fetchValues(r,start,end,periodMin){
   const markets=await Promise.all(neededOuts(r).map(async o=>{
-    const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${periodMin}`);
+    const j=await candles(r.series,o.ticker,start,end,periodMin);
     const cs=(j.candlesticks||[]).map(c=>[c.end_period_ts,candleValue(c),num(c.price?.previous_dollars)]).filter(x=>x[1]!=null).sort((a,b)=>a[0]-b[0]);
     // Price before the first reported period: Kalshi's "previous" price, else the first price seen,
     // else (nothing traded in the whole range) today's price, since it hasn't moved.
@@ -1254,7 +1264,7 @@ async function loadHouseBase(){
   try{
     const ps=await Promise.all(houseSeats.buckets.map(async b=>{
       if(!b.ticker)return b.p;
-      const j=await kget(`/series/KXDHOUSESEATS/markets/${b.ticker}/candlesticks?start_ts=${s0}&end_ts=${e0}&period_interval=60`);
+      const j=await candles("KXDHOUSESEATS",b.ticker,s0,e0,60);
       const cs=(j.candlesticks||[]).map(c=>[c.end_period_ts*1000,candleValue(c),num(c.price?.previous_dollars)]).filter(c=>c[1]!=null);
       const before=cs.filter(c=>c[0]<=at).pop();
       return before?before[1]:cs.length?(cs[0][2]??cs[0][1]):b.p;   // no trades around midnight: unchanged
@@ -1397,12 +1407,12 @@ function renderDetailMeta(){
 async function loadDetail(){
   const r=races.get(detail.id);if(!r)return;
   const token=++detail.token;const rg=RANGES.find(x=>x.k===detail.range);
-  const end=Math.floor(clockNow()/1000),start=end-rg.secs;
+  const end=Math.floor(clockNow()/60000)*60,start=end-rg.secs;   // whole minutes, so viewers share cached answers
   $("chartbox").innerHTML='<div class="chartmsg">Loading price history…</div>';
   const outs=detailOutcomes(r);
   try{
     const series=await Promise.all(outs.map(async(o,i)=>{
-      const j=await kget(`/series/${r.series}/markets/${o.ticker}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=${rg.period}`);
+      const j=await candles(r.series,o.ticker,start,end,rg.period);
       const pts=(j.candlesticks||[]).map(c=>[c.end_period_ts*1000,candleValue(c)]).filter(p=>p[1]!=null);
       // End the line at the live price so it matches the table
       pts.push([clockNow(),o.p]);

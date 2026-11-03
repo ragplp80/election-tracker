@@ -171,6 +171,33 @@ test("prices: a refused batch is retried in halves before any race is re-read", 
   } finally { restore(); }
 });
 
+test("history: stored candles are reused; later requests only ask Kalshi for what's new", async () => {
+  const board = defaultBoard();
+  board.candles = (tk, ts) => 0.6 + ((ts / 60) % 10) / 100;
+  const log = [];
+  const restore = useFakeKalshi(board, log);
+  try {
+    const h = require("../api/history.js");
+    const now = Math.floor(Date.now() / 60000) * 60;
+    const q = (start, end) => ({ series: "SENATETX", ticker: "SENATETX-26-D", period: "1", start: String(start), end: String(end) });
+    const a = await callHandler(h, q(now - 6 * 3600, now - 600));
+    assert.equal(a.statusCode, 200);
+    assert.ok(a.body.candlesticks.length > 300, "six hours of minutes");
+    assert.ok(a.body.candlesticks[0].price.close_dollars, "same shape as Kalshi's candles");
+    const calls = () => log.filter((l) => l.includes("/candlesticks"));
+    assert.equal(calls().length, 1);
+    const b = await callHandler(h, q(now - 3 * 3600, now));
+    assert.equal(calls().length, 2);
+    const since = +new URLSearchParams(calls()[1].split("?")[1]).get("start_ts");
+    assert.ok(since >= now - 600 - 180, "second request only fetched the last few minutes");
+    assert.equal(b.body.candlesticks[b.body.candlesticks.length - 1].end_period_ts, now);
+    await callHandler(h, q(now - 2 * 3600, now));
+    assert.equal(calls().length, 2, "nothing new: no Kalshi call");
+    const bad = await callHandler(h, { series: "X", ticker: "../etc", period: "1", start: "1", end: "2" });
+    assert.equal(bad.statusCode, 400);
+  } finally { restore(); }
+});
+
 test("relay: passes allowed read-only paths, refuses others", withBoard(defaultBoard(), async () => {
   const relay = require("../api/kalshi.js");
   const ok = await callHandler(relay, { path: "/events?series_ticker=SENATETX&with_nested_markets=true" });

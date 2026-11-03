@@ -220,4 +220,4 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
   return { mode: "sweep", stats, races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats, margins: margins.map(swap) };
 }
 
-module.exports = { kget, kgetEvents, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };
+module.exports = { runtimeCache, kget, kgetEvents, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };

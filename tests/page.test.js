@@ -374,3 +374,16 @@ test("embedded chart (?embed=1&race=...): opens that race's chart alone, and clo
   pg.d.getElementById("sheetClose").click();
   await waitFor(() => msgs.some((m) => m && m.type === "et-close-race"), { what: "close message" });
 });
+
+test("trend history comes from the shared store, and from Kalshi directly if the store is down", async (t) => {
+  for (const mode of ["ok", "fail"]) {
+    const board = defaultBoard();
+    board.candles = (tk, ts) => { if (!tk.startsWith("SENATETX-26")) return null; const v = 0.6 + 0.05 * ((ts % 3600) / 3600); return tk.endsWith("-D") ? v : 1 - v; };
+    const pg = loadPage({ board, history: mode === "fail" ? "fail" : undefined });
+    t.after(() => pg.close());
+    await loaded(pg);
+    await waitFor(() => pg.log.some((l) => l === "PAGE /api/history"), { what: "history request", timeout: 15000 });
+    if (mode === "fail") await waitFor(() => pg.log.some((l) => /PAGE \/api\/kalshi .*candlesticks/.test(l)), { what: "fallback to the relay", timeout: 15000 });
+    else assert.ok(!pg.log.some((l) => /PAGE \/api\/kalshi .*candlesticks/.test(l)), "no direct candle requests when the store works");
+  }
+});
