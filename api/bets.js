@@ -66,7 +66,18 @@ function loadPrivateKey(raw) {
       tries.push(`-----BEGIN ${kind}-----\n${(body.match(/.{1,64}/g) || []).join("\n")}\n-----END ${kind}-----\n`);
   }
   for (const t of tries) { try { return crypto.createPrivateKey(t); } catch (e) {} }
-  throw new Error("KALSHI_PRIVATE_KEY could not be read as a private key");
+  throw new Error("KALSHI_PRIVATE_KEY could not be read as a private key (" + describeKeyText(pem) + ")");
+}
+
+// A safe description of what was pasted, for fixing setup: length and PEM labels only, never content.
+function describeKeyText(pem) {
+  const labels = [...pem.matchAll(/-----(BEGIN|END) ([A-Z ]+)-----/g)].map((m) => m[1] + " " + m[2]);
+  const hints = [];
+  if (/PUBLIC KEY/.test(labels.join())) hints.push("this is the public key, not the private one");
+  if (/ENCRYPTED/.test(labels.join()) || /Proc-Type: 4,ENCRYPTED/.test(pem)) hints.push("key is password-protected");
+  if (!labels.length && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(pem)) hints.push("looks like a Key ID, not a private key");
+  if (labels.length === 1) hints.push("only one of the BEGIN/END lines is present, so the key looks cut off");
+  return `${pem.length} characters; labels: ${labels.length ? labels.join(", ") : "none"}${hints.length ? "; " + hints.join("; ") : ""}`;
 }
 
 // Kalshi signs timestamp + method + path (path from /trade-api/v2, without the query string).
@@ -181,7 +192,7 @@ async function handler(req, res) {
     const live = await accountPositions();
     if (live) { positions = mergePositions(live, saved || []); source = "account"; }
   } catch (e) {
-    accountError = String(e.message || e).slice(0, 120);   // never includes key material
+    accountError = String(e.message || e).slice(0, 300);   // never includes key material
   }
   if (positions === null) return res.status(500).json({ error: "BETS_POSITIONS is not valid JSON", accountError });
 
