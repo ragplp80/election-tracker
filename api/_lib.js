@@ -220,4 +220,7 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
   return { mode: "sweep", stats, races: swept.map((x, i) => (x.error ? cat.races[i] : x)), seats, margins: margins.map(swap) };
 }
 
-module.exports = { runtimeCache, kget, kgetEvents, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };
+// Let work finish after the response has been sent (Vercel), or just run it (elsewhere)
+function later(job) { try { vercelFns?.waitUntil?.(job); } catch (e) {} return job; }
+
+module.exports = { later, runtimeCache, kget, kgetEvents, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };

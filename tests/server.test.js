@@ -198,6 +198,21 @@ test("history: stored candles are reused; later requests only ask Kalshi for wha
   } finally { restore(); }
 });
 
+test("trends: each price check is recorded once a minute, only changes stored, old checks thinned", async () => {
+  const tr = require("../api/_trends.js");
+  tr.reset();
+  const H = require("./helpers.js");
+  const ev = (p) => [{ ev: H.twoParty("SENATETX-26", "D", "R", p) }];
+  const t0 = Date.UTC(2026, 10, 3, 12, 0);
+  for (let m = 0; m < 5 * 60; m++) await tr.record(ev(m < 200 ? 0.6 : 0.65), t0 + m * 60e3);
+  assert.equal(await tr.record(ev(0.7), t0 + 299 * 60e3 + 30e3), false, "same minute: not recorded again");
+  const s = await tr.read();
+  const now = t0 + 299 * 60e3;
+  assert.ok(s.samples.filter((t) => t >= now - 3 * 3600e3).length >= 180, "every minute for the last 3 hours");
+  assert.ok(s.samples.filter((t) => t < now - 3 * 3600e3).length <= 3, "one an hour before that");
+  assert.deepEqual(s.series["SENATETX-26"].map((p) => p[1]), [6000, 6500], "only the change is stored");
+});
+
 test("relay: passes allowed read-only paths, refuses others", withBoard(defaultBoard(), async () => {
   const relay = require("../api/kalshi.js");
   const ok = await callHandler(relay, { path: "/events?series_ticker=SENATETX&with_nested_markets=true" });

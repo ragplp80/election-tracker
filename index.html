@@ -1199,11 +1199,11 @@ function raceValueFrom(r,priceAt){
 }
 // What this page has already looked up, so switching windows doesn't fetch the same history twice.
 const fetched=new Map(); // id -> {minuteAt, hourlyFrom, hourlyAt}
-// Minute prices are needed when the last 3 hours have any stretch of 10+ minutes with no data:
+// Minute prices are needed when the last 3 hours have any stretch of 20+ minutes with no data:
 // the page was just opened, or sat open without refreshing.
 function needsMinute(r,now){
   const f=fetched.get(r.id);if(f?.minuteAt>now-10*60e3)return false;
-  const from=now-BF_HOURS*3600e3,gap=10*60e3;
+  const from=now-BF_HOURS*3600e3,gap=20*60e3;
   let prev=from;
   for(const [t] of history[r.id]||[]){if(t<from)continue;if(t-prev>gap)return true;prev=t}
   return now-prev>gap;
@@ -1273,8 +1273,38 @@ async function loadHouseBase(){
     if(st)houseBase={at,median:st.median,mean:st.mean};
   }catch(e){}
 }
+// The server's shared trend history: every race's value at each of its recent price checks, in
+// one request. Fills this device's history so only what's still missing is looked up race by race.
+let trendsAt=0;
+async function loadTrends(){
+  if(clockNow()-trendsAt<5*60e3)return;
+  try{
+    const r=await fetch("/api/trends",{headers:{accept:"application/json"}});if(!r.ok)return;
+    const j=await r.json(),now=clockNow(),samples=j.samples||[];if(!samples.length)return;
+    trendsAt=now;
+    const recent=samples.filter(t=>t>=now-BF_HOURS*3600e3);
+    let maxGap=recent.length?recent[0]-(now-BF_HOURS*3600e3):Infinity;
+    for(let i=1;i<recent.length;i++)maxGap=Math.max(maxGap,recent[i]-recent[i-1]);
+    if(recent.length)maxGap=Math.max(maxGap,now-recent[recent.length-1]);
+    const minuteOk=maxGap<=20*60e3,hourlyOk=samples[0]<=hourlyFrom(now)+3600e3;
+    for(const r of races.values()){
+      const ch=j.series?.[r.id];if(!ch||!ch.length)continue;
+      const pts=[];let i=-1;
+      for(const t of samples){while(i+1<ch.length&&ch[i+1][0]<=t)i++;if(i>=0)pts.push([t,ch[i][1]/1e4])}
+      mergePoints(r.id,pts,now);
+      const f=fetched.get(r.id)||{};
+      if(minuteOk)f.minuteAt=now;
+      if(hourlyOk){f.hourlyAt=now;f.hourlyFrom=samples[0]}
+      fetched.set(r.id,f);
+    }
+  }catch(e){}
+}
 async function backfill(){
   loadHouseBase().then(()=>{if(houseBase)render()});
+  bf.running=true;
+  await loadTrends();
+  bf.running=false;
+  for(const x of races.values())metrics(x);render();
   const now=clockNow();
   const jobs=[...races.values()].filter(r=>r.series).map(r=>({r,minute:needsMinute(r,now),hourly:needsHourly(r,now)})).filter(j=>j.minute||j.hourly);
   if(!jobs.length)return;
@@ -1283,10 +1313,12 @@ async function backfill(){
   const endM=Math.floor(now/60000)*60,startM=endM-BF_HOURS*3600;
   const endH=Math.floor(now/3600e3)*3600+3600,startH=Math.floor(hourlyFrom(now)/3600e3)*3600;
   let sinceRender=0;
-  await pool(jobs,3,async({r,minute,hourly})=>{
+  await pool(jobs,6,async({r,minute,hourly})=>{
     try{
       const f=fetched.get(r.id)||{};
-      if(!r.type.startsWith("ctl")&&r.vol24===0){
+      // A race that hasn't traded today, or barely traded while sitting at 97%+, hasn't moved:
+      // fill its history flat instead of looking it up.
+      if(!r.type.startsWith("ctl")&&(r.vol24===0||(r.vol24<100&&Math.max(val(r),1-val(r))>=0.97))){
         mergePoints(r.id,flatHistory(r,now),now);f.hourlyAt=f.minuteAt=now;f.hourlyFrom=hourlyFrom(now);
       }else{
         if(hourly){mergePoints(r.id,await fetchValues(r,startH,endH,60),now);f.hourlyAt=now;f.hourlyFrom=startH*1000}

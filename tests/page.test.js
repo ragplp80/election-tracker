@@ -382,8 +382,27 @@ test("trend history comes from the shared store, and from Kalshi directly if the
     const pg = loadPage({ board, history: mode === "fail" ? "fail" : undefined });
     t.after(() => pg.close());
     await loaded(pg);
-    await waitFor(() => pg.log.some((l) => l === "PAGE /api/history"), { what: "history request", timeout: 15000 });
+    await waitFor(() => pg.log.some((l) => l.startsWith("PAGE /api/history")), { what: "history request", timeout: 15000 });
     if (mode === "fail") await waitFor(() => pg.log.some((l) => /PAGE \/api\/kalshi .*candlesticks/.test(l)), { what: "fallback to the relay", timeout: 15000 });
     else assert.ok(!pg.log.some((l) => /PAGE \/api\/kalshi .*candlesticks/.test(l)), "no direct candle requests when the store works");
   }
+});
+
+test("shared trends fill the page's history so races aren't looked up one by one", async (t) => {
+  const tr = require("../api/_trends.js");
+  const board = defaultBoard();
+  board.candles = () => 0.6;
+  const pg = loadPage({ board, snapshot: "slow" });   // hold the page's first snapshot while the history is set up
+  t.after(() => pg.close());
+  // The server has been checking prices every minute for the last 3 hours (hourly before that)
+  const now = Date.now(), evs = [];
+  for (const [series, list] of Object.entries(board.events)) for (const ev of list) evs.push({ ev });
+  for (let m = 26 * 60; m >= 1; m -= (m > 180 ? 60 : 1)) await tr.record(evs, now - m * 60e3);
+  await waitFor(() => pg.log.includes("PAGE /api/snapshot"), { what: "snapshot request" });
+  pg.release();
+  await loaded(pg);
+  await waitFor(() => pg.log.includes("PAGE /api/trends"), { what: "trends request", timeout: 15000 });
+  await new Promise((r) => setTimeout(r, 1500));
+  const looked = pg.log.filter((l) => l.startsWith("PAGE /api/history") && !l.includes("KXDHOUSESEATS"));
+  assert.deepEqual(looked, [], "no race looked up one by one (the seat-count baseline is separate)");
 });

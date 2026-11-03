@@ -1,10 +1,10 @@
 # Keeps the server's race list warm. Building it from scratch takes a minute or two, and that
 # happens when nobody has opened the page for a while, so the first refresh after a quiet stretch
-# was slow. Asking for it every 20 minutes means a viewer almost never waits for a rebuild.
+# was slow. Asking for it every 10 minutes (which also records a point in the shared trend history) means a viewer almost never waits for a rebuild.
 name: keep warm
 on:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 jobs:
   warm:
