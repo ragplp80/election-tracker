@@ -123,6 +123,37 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
 .chip[data-open]:hover,.srow[data-open]:hover{filter:brightness(1.12)}
 .srow[data-open]:hover{background:color-mix(in srgb,var(--surface2) 70%,transparent)}
 .raceframe{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:50;background:transparent}
+/* Movers */
+.mvrow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.2fr) 80px 80px;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.mvrow.head{border-top:0;padding-top:0;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.mvrow b{font-weight:800;font-size:14px}
+.mvlead{font-weight:700}
+.mvlead.D{color:var(--dem)} .mvlead.R{color:var(--rep)} .mvlead.I{color:var(--ind)}
+.mv{font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
+.mv.D{color:var(--dem)} .mv.R{color:var(--rep)} .mv.I{color:var(--ind)} .mv.flat{color:var(--faint)}
+.mvrow[data-open]:hover{background:color-mix(in srgb,var(--surface2) 70%,transparent)}
+
+/* TV mode: one slide at a time, full screen, big type, for a propped-up iPad */
+.tvbar{position:fixed;left:0;right:0;top:0;z-index:30;display:flex;align-items:center;gap:14px;padding:max(10px,env(safe-area-inset-top,0px)) 20px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+.tvbar[hidden]{display:none}
+.tvtitle{font-size:18px;font-weight:800;font-variation-settings:"wdth" 75;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap}
+.tvslide{font-size:16px;font-weight:700;color:var(--muted);white-space:nowrap}
+.tvdots{display:flex;gap:6px}
+.tvdots i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.tvdots i.on{background:var(--fg)}
+.tvclock{margin-left:auto;font-size:18px;font-weight:800;white-space:nowrap}
+.tvupd{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.tvupd.stale{color:var(--rep);font-weight:700}
+.tvprog{position:absolute;left:0;bottom:-1px;height:3px;background:var(--move);width:0}
+html.tv body{overflow:hidden}
+html.tv header,html.tv #preview,html.tv .foot{display:none}
+html.tv .slide{display:none}
+html.tv .slide.on{display:block;position:fixed;left:0;right:0;bottom:0;top:var(--tvbar,60px);overflow:hidden;margin:0;padding:14px 22px 22px;border:0;border-radius:0;background:var(--bg)}
+html.tv .slide.on>*{zoom:var(--tvzoom,1)}
+html.tv .slide.on.card>h2{font-size:13px}
+html.tv .slide.on .verdicts{margin-top:0}
+html.tv .raceframe{display:none}
+@media (max-width:760px){.tvslide,.tvdots,.tvupd{display:none}}
 .foot{font-size:11.5px;color:var(--muted);margin:14px 0}
 
 /* Phones: the House grid becomes one block per closing time; Senate rows wrap to two lines */
@@ -160,6 +191,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
   <h1>How We Looking</h1>
   <div class="hctl">
     <a class="btn" href="./">Live odds</a>
+    <button class="btn" id="tvBtn" title="Full-screen slideshow for a propped-up iPad">TV mode</button>
     <button class="btn primary" id="refresh">Refresh</button>
   </div>
   <div class="status" id="status">Loading the odds…</div>
@@ -167,14 +199,16 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
 
 <div class="card preview" id="preview" hidden></div>
 
+<div class="slide" data-slide="Overview">
 <section class="verdicts">
   <div class="card" id="vHouse"><h2>House</h2><div class="sub">Loading…</div></div>
   <div class="card" id="vSenate"><h2>Senate</h2><div class="sub">Loading…</div></div>
 </section>
 
 <div class="card next" id="next"></div>
+</div>
 
-<section class="card">
+<section class="card slide" data-slide="House">
   <h2>House: a blue wave should be clear by 9pm</h2>
   <div class="hgrid" id="hgrid"></div>
   <div class="hlegend">
@@ -187,18 +221,34 @@ h2{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.14em;text-tran
   </div>
 </section>
 
-<section class="card">
+<section class="card slide" data-slide="Senate">
   <h2>Senate: control should come into focus by 11pm</h2>
   <div id="senate"></div>
   <div class="stally" id="stally"></div>
 </section>
 
-<section class="card">
+<section class="card slide" data-slide="Movers">
+  <h2>Biggest moves in the last hour</h2>
+  <div id="movers"><div class="sub">Building from the server's price checks…</div></div>
+</section>
+
+<section class="card slide" data-slide="Keys">
   <h2>Keys to watch</h2>
   <div id="keys"></div>
 </section>
 
 <div class="foot" id="foot"></div>
+
+<div class="tvbar" id="tvbar" hidden>
+  <b class="tvtitle">How We Looking</b>
+  <span class="tvslide" id="tvSlide"></span>
+  <span class="tvdots" id="tvDots"></span>
+  <span class="tvclock num" id="tvClock"></span>
+  <span class="tvupd" id="tvUpd"></span>
+  <button class="btn" id="tvPause">Pause</button>
+  <button class="btn" id="tvExit">Exit</button>
+  <i class="tvprog" id="tvProg"></i>
+</div>
 
 <script src="core.js"></script>
 <script src="looking-data.js"></script>
@@ -232,7 +282,7 @@ function ingest(j){
   races=new Map();
   for(const {meta,ev} of j.races||[]){
     const o=Core.raceOdds(ev);if(!o||o.d==null)continue;
-    races.set(Core.seatKey(meta),{d:o.d,multi:o.multi,meta,id:ev.event_ticker});
+    races.set(Core.seatKey(meta),{d:o.d,multi:o.multi,meta,id:ev.event_ticker,outs:o.outs});
   }
   seatStat=null;
   if(j.seats){const hs=Core.parseSeatMarket({events:[j.seats]});if(hs)seatStat=Core.seatStats(hs)}
@@ -468,10 +518,128 @@ async function refresh(){
     const j=await r.json();if(!Array.isArray(j.races)||!j.races.length)throw new Error("empty");
     ingest(j);lastAt=clockNow();store.set("et.look.snap",{at:lastAt,j:{races:j.races,seats:j.seats,margins:j.margins}});
     render();renderStatus();
+    await loadTrendsData();renderMovers();
   }catch(e){renderStatus(e.message)}
   finally{busy=false;$("refresh").disabled=false;$("refresh").textContent="Refresh"}
 }
 $("refresh").addEventListener("click",refresh);
+
+// ---------- Movers (from the server's shared trend history) ----------
+let trends=null;
+async function loadTrendsData(){
+  try{const r=await fetch("/api/trends",{headers:{accept:"application/json"}});if(r.ok)trends=await r.json()}catch(e){}
+}
+function valueAt(id,t){
+  if(!trends||!trends.samples?.length||trends.samples[0]>t)return null;
+  const ch=trends.series?.[id];if(!ch)return null;
+  let v=null;for(const [ts,x] of ch){if(ts<=t)v=x/1e4;else break}
+  return v;
+}
+function raceLabel(m){
+  if(m.type==="senate")return Core.STATES[m.st]+" Senate";
+  if(m.type==="gov")return Core.STATES[m.st]+" Gov";
+  if(m.type==="house")return m.st+"-"+(m.dist||"AL");
+  return m.type==="ctlS"?"Senate control":m.type==="ctlH"?"House control":"";
+}
+function renderMovers(){
+  const now=clockNow(),rows=[];
+  for(const r of races.values()){
+    const v60=valueAt(r.id,now-60*60e3);if(v60==null)continue;
+    const v15=valueAt(r.id,now-15*60e3);
+    rows.push({r,m60:r.d-v60,m15:v15==null?null:r.d-v15});
+  }
+  if(!rows.length){$("movers").innerHTML=`<div class="sub">Not enough price history yet: it builds up as the server checks prices through the day.</div>`;return}
+  rows.sort((a,b)=>Math.abs(b.m60)-Math.abs(a.m60));
+  const top=rows.filter(x=>Math.abs(x.m60)>=0.01).slice(0,10);
+  if(!top.length){$("movers").innerHTML=`<div class="sub">Quiet hour: nothing has moved a point or more.</div>`;return}
+  const indRace=r=>r.multi&&r.outs?.some(o=>o.party==="I"&&o.p>=0.05);
+  const mv=(m,r)=>{if(m==null)return`<span class="mv flat">–</span>`;if(Math.abs(m)<0.005)return`<span class="mv flat">0</span>`;
+    const side=m>0?(indRace(r)?"I":"D"):"R";return`<span class="mv ${side}">${side} +${(Math.abs(m)*100).toFixed(1)}</span>`};
+  $("movers").innerHTML=`<div class="mvrow head"><span>Race</span><span>Leader now</span><span class="mv">15 min</span><span class="mv">1 hour</span></div>`
+    +top.map(({r,m60,m15})=>{const lead=r.outs?.[0];const side=lead?.party==="D"||lead?.party==="R"||lead?.party==="I"?lead.party:"";
+      return`<div class="mvrow" data-open="${esc(r.id)}" role="button" tabindex="0"><b>${esc(raceLabel(r.meta))}</b><span class="mvlead ${side}">${esc(lead?lead.name:"")} ${lead?pct(lead.p):""}</span>${mv(m15,r)}${mv(m60,r)}</div>`}).join("");
+}
+
+// ---------- TV mode ----------
+const SLIDE_MS=20000;
+let tv=null,wakeLock=null;
+const slidesList=()=>[...document.querySelectorAll(".slide")];
+async function keepAwake(on){
+  try{if(on&&!wakeLock&&navigator.wakeLock){wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener?.("release",()=>{wakeLock=null})}
+    else if(!on&&wakeLock){await wakeLock.release();wakeLock=null}}catch(e){}
+}
+function enterTv(){
+  if(tv)return;
+  document.documentElement.classList.add("tv");$("tvbar").hidden=false;
+  tv={i:0,t0:clockNow(),paused:false,timer:setInterval(tvTick,250)};
+  try{document.documentElement.requestFullscreen?.().catch(()=>{})}catch(e){}
+  keepAwake(true);showSlide(0);refresh();
+}
+function exitTv(){
+  if(!tv)return;
+  clearInterval(tv.timer);tv=null;
+  document.documentElement.classList.remove("tv");$("tvbar").hidden=true;
+  for(const el of slidesList()){el.classList.remove("on");el.style.removeProperty("--tvzoom");el.scrollTop=0}
+  try{if(document.fullscreenElement)document.exitFullscreen?.()}catch(e){}
+  keepAwake(false);
+  if(new URLSearchParams(location.search).has("tv"))history.replaceState(null,"",location.pathname);
+}
+function showSlide(i){
+  const list=slidesList();tv.i=(i+list.length)%list.length;tv.t0=clockNow();
+  list.forEach((el,k)=>{el.classList.toggle("on",k===tv.i);el.scrollTop=0});
+  fitSlide();tvBar();
+}
+// Scale the slide so a desktop-width layout fills the screen's width; tall slides scroll slowly
+function fitSlide(){
+  if(!tv)return;
+  document.documentElement.style.setProperty("--tvbar",$("tvbar").offsetHeight+"px");
+  const el=slidesList()[tv.i];if(!el)return;
+  const base=Math.max(760,Math.min(1180,innerWidth));
+  let z=Math.max(0.6,Math.min(1.7,(innerWidth-44)/base*(innerWidth>=1000?1.12:1)));
+  el.style.setProperty("--tvzoom",z.toFixed(3));
+  // A short slide (the overview, a quiet movers list) grows to use the height too
+  const top=el.getBoundingClientRect().top,kids=[...el.children];
+  const used=kids.length?Math.max(...kids.map(k=>k.getBoundingClientRect().bottom))-top+22:0,room=el.clientHeight;
+  if(used>0&&used<room*0.75)z=Math.min(z*1.5,z*(room*0.92)/used);
+  el.style.setProperty("--tvzoom",z.toFixed(3));
+}
+function tvBar(){
+  const list=slidesList();
+  $("tvSlide").textContent=list[tv.i]?.dataset.slide||"";
+  $("tvDots").innerHTML=list.map((_,k)=>`<i class="${k===tv.i?"on":""}"></i>`).join("");
+  $("tvPause").textContent=tv.paused?"Play":"Pause";
+}
+function tvTick(){
+  if(!tv)return;
+  const now=clockNow(),el=slidesList()[tv.i];
+  $("tvClock").textContent=new Date(now).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"})+" ET";
+  const age=lastAt?Math.round((now-lastAt)/60e3):null;
+  $("tvUpd").textContent=age==null?"":age>=3?`Odds ${age} min old`:`Updated ${new Date(lastAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"})}`;
+  $("tvUpd").classList.toggle("stale",age!=null&&age>=3);
+  if(tv.paused){$("tvProg").style.width="0";return}
+  const f=Math.min(1,(now-tv.t0)/SLIDE_MS);
+  $("tvProg").style.width=(f*100)+"%";
+  // Tall slides scroll from top to bottom while they're up, pausing at each end
+  if(el){const room=el.scrollHeight-el.clientHeight;if(room>4){const g=Math.min(1,Math.max(0,(f-0.15)/0.7));el.scrollTop=room*g}}
+  if(f>=1)showSlide(tv.i+1);
+}
+$("tvBtn").addEventListener("click",enterTv);
+$("tvExit").addEventListener("click",e=>{e.stopPropagation();exitTv()});
+$("tvPause").addEventListener("click",e=>{e.stopPropagation();if(!tv)return;tv.paused=!tv.paused;tv.t0=clockNow();tvBar()});
+// Tap the left third to go back, the right third to skip ahead, the middle to pause
+document.addEventListener("click",e=>{
+  if(!tv||e.target.closest(".tvbar"))return;
+  e.preventDefault();e.stopPropagation();
+  const x=e.clientX/innerWidth;
+  if(x<1/3)showSlide(tv.i-1);else if(x>2/3)showSlide(tv.i+1);else{tv.paused=!tv.paused;tv.t0=clockNow();tvBar()}
+},true);
+document.addEventListener("keydown",e=>{
+  if(!tv)return;
+  if(e.key==="ArrowRight")showSlide(tv.i+1);else if(e.key==="ArrowLeft")showSlide(tv.i-1);
+  else if(e.key===" "){e.preventDefault();tv.paused=!tv.paused;tv.t0=clockNow();tvBar()}else if(e.key==="Escape")exitTv();
+});
+addEventListener("resize",fitSlide);
+document.addEventListener("visibilitychange",()=>{if(tv&&!document.hidden)keepAwake(true)});
 
 // Tap a race: the live tracker's chart (price history, ranges, news) opens over this page.
 function openRace(id){
@@ -483,7 +651,7 @@ function openRace(id){
 }
 function closeRace(){const f=$("raceFrame");if(f)f.remove();document.body.style.overflow=""}
 window.addEventListener("message",e=>{if(e.origin===location.origin&&e.data&&e.data.type==="et-close-race")closeRace()});
-for(const id of ["hgrid","senate"]){
+for(const id of ["hgrid","senate","movers"]){
   $(id).addEventListener("click",e=>{const el=e.target.closest("[data-open]");if(el)openRace(el.dataset.open)});
   $(id).addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const el=e.target.closest("[data-open]");if(el){e.preventDefault();openRace(el.dataset.open)}});
 }
@@ -491,7 +659,9 @@ for(const id of ["hgrid","senate"]){
 const saved=store.get("et.look.snap",null);
 if(saved&&saved.j&&clockNow()-saved.at<72*3600e3){ingest(saved.j);lastAt=saved.at;render();renderStatus()}
 refresh();
-setInterval(()=>{if(!document.hidden)refresh()},60e3);
+// Every minute, or every 30 seconds in TV mode
+setInterval(()=>{if(!document.hidden&&clockNow()-(lastAt||0)>=(tv?28e3:58e3))refresh()},5e3);
+if(new URLSearchParams(location.search).has("tv"))enterTv();
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&clockNow()-(lastAt||0)>30e3)refresh()});
 </script>
 </body>

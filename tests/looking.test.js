@@ -123,3 +123,34 @@ test("How We Looking: FL-12 and FL-16 sit in the 7pm Blue Tsunami column", async
   assert.match(sevenPm.textContent, /FL-16.*R 75%/);
   assert.ok(!pg.d.getElementById("ladder"), "no separate ladder section");
 });
+
+test("How We Looking: TV mode shows one slide at a time and taps move through them", async (t) => {
+  const pg = page(t, { now: Date.parse("2026-11-01T20:00:00Z"), url: "https://tracker.test/looking.html?tv=1" });
+  await ready(pg);
+  assert.ok(pg.d.documentElement.classList.contains("tv"));
+  const on = () => [...pg.d.querySelectorAll(".slide.on")].map((el) => el.dataset.slide);
+  assert.deepEqual(on(), ["Overview"]);
+  const tap = (x) => pg.d.body.dispatchEvent(new pg.w.MouseEvent("click", { bubbles: true, clientX: x, clientY: 300 }));
+  tap(pg.w.innerWidth * 0.9);
+  assert.deepEqual(on(), ["House"]);
+  tap(pg.w.innerWidth * 0.1);
+  assert.deepEqual(on(), ["Overview"]);
+  tap(pg.w.innerWidth * 0.5);
+  assert.match(pg.text("#tvPause"), /Play/, "middle tap pauses");
+  pg.d.getElementById("tvExit").click();
+  assert.ok(!pg.d.documentElement.classList.contains("tv"));
+});
+
+test("How We Looking: movers come from the server's trend history", async (t) => {
+  const tr = require("../api/_trends.js");
+  const H = require("./helpers.js");
+  const pg = page(t, { snapshot: "slow" });
+  const now = Date.now();
+  for (let m = 90; m >= 1; m--) await tr.record([{ ev: H.twoParty("SENATETX-26", "James Talarico", "Ken Paxton", m > 30 ? 0.6 : 0.68) }], now - m * 60e3);
+  await waitFor(() => pg.log.includes("PAGE /api/snapshot"), { what: "snapshot request" });
+  pg.release();
+  await ready(pg);
+  await waitFor(() => pg.d.querySelector("#movers .mvrow[data-open]"), { what: "movers", timeout: 10000 });
+  const row = pg.d.querySelector('#movers .mvrow[data-open="SENATETX-26"]');
+  assert.match(row.textContent, /Texas Senate.*Talarico.*D \+8\.0/);
+});
