@@ -113,7 +113,9 @@ async function signedGet(keyId, key, path) {
     reasons.push(`${new URL(host).hostname}: HTTP ${r.status}${why ? " " + why : ""}`);
     if (r.status !== 401 && r.status !== 403 && r.status !== 404) break;
   }
-  throw new Error("Kalshi account " + reasons.join("; "));
+  const idShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(keyId)
+    ? "Key ID looks right" : `Key ID is ${keyId.length} characters and isn't in Kalshi's ID format (8-4-4-4-12)`;
+  throw new Error("Kalshi account " + reasons.join("; ") + " (" + idShape + ")");
 }
 
 const dollars = (m, name) => {
