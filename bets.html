@@ -61,7 +61,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .legs[open] summary::before{transform:rotate(90deg)}
 .legs summary b{color:var(--fg)}
 .leglist{display:flex;flex-direction:column;gap:5px;margin-top:8px}
-.leg{display:grid;grid-template-columns:8px 1fr auto 52px;gap:8px;align-items:center;font-size:13px;font-variant-numeric:tabular-nums}
+.leg{display:grid;grid-template-columns:8px 1fr auto 52px auto;gap:8px;align-items:center;font-size:13px;font-variant-numeric:tabular-nums}
 .leg .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
 .leg.on .dot{background:var(--up)} .leg.off .dot{background:var(--down)} .leg.won .dot{background:var(--up);box-shadow:0 0 0 2px color-mix(in srgb,var(--up) 35%,transparent)}
 .leg.lost{opacity:.55;text-decoration:line-through}
@@ -70,6 +70,16 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .leg .pc{font-weight:700;text-align:right}
 .leg .tr{font-size:11px;text-align:right;color:var(--muted)}
 .legnote{color:var(--faint);font-size:11px;margin-top:6px}
+.kl{font-size:11px;font-weight:700;color:var(--fg);text-decoration:none;border:1px solid var(--line);background:var(--surface2);border-radius:6px;padding:2px 7px;white-space:nowrap}
+.leg .kl{padding:1px 5px;font-size:10px}
+.lock{margin-top:8px;border:1px solid color-mix(in srgb,var(--warn) 60%,var(--line));background:color-mix(in srgb,var(--warn) 9%,var(--surface));border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+.lock h3{margin:0;font-size:13px;letter-spacing:.02em}
+.lock .buy{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px}
+.lock .buy b{font-variant-numeric:tabular-nums}
+.lock .go{background:var(--fg);color:var(--bg);border:0;padding:5px 10px;font-size:12px}
+.lock .sum{font-size:13px}
+.lock small{color:var(--muted);font-size:11px}
+.waitlock{color:var(--faint);font-size:11px;margin-top:4px}
 .msg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;color:var(--muted);text-align:center}
 @media (max-width:760px){.totals{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:22px}}
 </style>
@@ -101,12 +111,46 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
   const cents = (p) => (p == null ? "—" : Math.round(p * 100) + "¢");
   const GROUP_ORDER = ["Senate", "Governor", "House", "Control", "Parlay", "State", "Other"];
   let first = null, prev = null, data = null;   // prices when the page opened, and at the last refresh
+  window.__board = { get hedgePlan() { return hedgePlan; } };   // for tests
   const openLegs = new Set();                    // parlays whose leg list is expanded (kept across refreshes)
   document.addEventListener("toggle", (e) => {
     const d = e.target;
     if (!d.classList || !d.classList.contains("legs")) return;
     if (d.open) openLegs.add(d.dataset.t); else openLegs.delete(d.dataset.t);
   }, true);
+
+  const klink = (url, text = "Kalshi ↗") => url ? `<a class="kl" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${text}</a>` : "";
+  const feeFor = (n, p) => Math.ceil(0.07 * n * p * (1 - p) * 100) / 100;   // Kalshi's trading fee, rounded up to the cent
+
+  // Hedge to lock in a parlay with 1-2 legs left: buy the other side of each open leg, as many
+  // contracts as the parlay pays. Then any open leg missing pays back the full amount, and if they
+  // all hit the parlay pays. Worst case = payout - what the hedges cost.
+  function hedgePlan(r) {
+    if (!r.legs || !r.legs.length) return null;
+    if (r.legs.some((l) => l.price === 0)) return { dead: true };   // a settled leg went the wrong way
+    const open = r.legs.filter((l) => l.price !== 1);
+    if (!open.length || open.length > 2) return { open: open.length };
+    const n = Math.ceil(r.payout);
+    const buys = open.map((l) => ({ l, n, ask: l.hedgeAsk, cost: l.hedgeAsk == null ? null : +(n * l.hedgeAsk + feeFor(n, l.hedgeAsk)).toFixed(2) }));
+    if (buys.some((b) => b.cost == null)) return { open: open.length, buys, noQuote: true };
+    const spend = +buys.reduce((s, b) => s + b.cost, 0).toFixed(2);
+    const locked = +(Math.min(r.payout, n) - spend).toFixed(2);
+    return { open: open.length, buys, spend, locked, vsPaid: +(locked - r.cost).toFixed(2) };
+  }
+
+  function lockBox(r) {
+    const h = hedgePlan(r);
+    if (!h) return "";
+    if (h.dead) return `<div class="waitlock">A leg has lost, so this parlay can't pay. Nothing to hedge.</div>`;
+    if (!h.buys) return `<div class="waitlock">Hedge helper appears when 2 legs are left (${h.open} open now).</div>`;
+    if (h.noQuote) return `<div class="lock"><h3>🔒 ${h.open} leg${h.open > 1 ? "s" : ""} left</h3><small>No one is offering the other side right now, so there's no price to hedge at. Check again shortly.</small>${h.buys.map((b) => `<div class="buy"><span>${esc(b.l.race)}: ${esc(b.l.hedgeName || "")}</span>${klink(b.l.url)}</div>`).join("")}</div>`;
+    const good = h.vsPaid >= 0;
+    return `<div class="lock"><h3>🔒 Lock it in: ${h.open} leg${h.open > 1 ? "s" : ""} left</h3>
+      ${h.buys.map((b) => `<div class="buy"><span>Buy <b>${b.l.hedgeSide.toUpperCase()}</b> · ${esc(b.l.race)}: ${esc(b.l.hedgeName || "")}<br><small>${b.n} contracts at ~${cents(b.ask)} ≈ ${money(b.cost)} with fee</small></span>${klink(b.l.url, "Bet on Kalshi ↗")}</div>`).join("")}
+      <div class="sum">Spend ≈ <b>${money(h.spend)}</b> → you get at least <b>${money(h.locked)}</b> whatever happens <b class="${good ? "pos" : "neg"}">(${signed(h.vsPaid)} vs the ${money(r.cost)} you paid)</b></div>
+      <small>${good ? "Every outcome comes out ahead." : "This locks in a smaller loss. Only worth it if you want to cut the risk."} Prices move, so check the price on Kalshi before you buy. Not advice.</small>
+    </div>`;
+  }
 
   function legsBlock(r) {
     if (!r.legs || !r.legs.length) return "";
@@ -116,7 +160,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       const cls = l.price === 1 ? "won" : l.price === 0 ? "lost" : l.price == null ? "" : l.price >= 0.5 ? "on" : "off";
       const d = l.price != null && l.prev != null ? Math.round((l.price - l.prev) * 100) : 0;
       const tr = l.price === 1 ? "won" : l.price === 0 ? "lost" : d ? `<span class="${d > 0 ? "pos" : "neg"}">${d > 0 ? "▲" : "▼"}${Math.abs(d)}¢</span>` : "—";
-      return `<div class="leg ${cls}"><span class="dot"></span><span class="who"><small>${esc(l.race)}</small>${esc(l.name)}</span><span class="pc">${cents(l.price)}</span><span class="tr">${tr}</span></div>`;
+      return `<div class="leg ${cls}"><span class="dot"></span><span class="who"><small>${esc(l.race)}</small>${esc(l.name)}</span><span class="pc">${cents(l.price)}</span><span class="tr">${tr}</span>${klink(l.url, "↗")}</div>`;
     };
     const all = r.legsCombined == null ? "" : ` · all hit ≈ <b>${r.legsCombined < 0.01 ? "<1" : Math.round(r.legsCombined * 100)}%</b>`;
     const done = r.legsWon || r.legsLost ? ` · <b>${r.legsWon}</b> won${r.legsLost ? `, <b class="neg">${r.legsLost}</b> lost` : ""}` : "";
@@ -124,7 +168,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       <summary><b>${r.legsAhead}/${r.legs.length}</b> legs ahead${done}${all}${weakest ? ` · weakest: ${esc(weakest.race)} ${cents(weakest.price)}` : ""}</summary>
       <div class="leglist">${legs.map(row).join("")}</div>
       <div class="legnote">Weakest legs first. Arrows: change since yesterday's close. "All hit" multiplies the legs as if unrelated; races tend to move together, so the real chance is usually higher.</div>
-    </details>`;
+    </details>${lockBox(r)}`;
   }
 
   try { $("sort").value = localStorage.getItem("board-sort") || "group"; } catch (e) {}
@@ -142,7 +186,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     const flash = dLast ? ` · <span class="${dLast > 0 ? "pos" : "neg"}">${dLast > 0 ? "+" : "−"}${Math.abs(dLast)}¢ just now</span>` : "";
     const state = settled ? (r.price === 1 ? "WON" : "Lost") : r.status === "unknown" ? "No price" : r.price >= 0.5 ? "On track" : "Behind";
     return `<div class="tile ${cls}">
-      <div class="top"><div class="label">${esc(r.label)}</div><span class="side">${r.side.toUpperCase()} × ${r.contracts.toFixed(0)}</span></div>
+      <div class="top"><div class="label">${esc(r.label)}</div><span class="side">${r.side.toUpperCase()} × ${r.contracts.toFixed(0)}</span>${klink(r.url)}</div>
       <div class="bar"><i style="width:${r.price == null ? 0 : Math.round(r.price * 100)}%"></i></div>
       <div class="nums">
         <div><small>Chance</small><b>${cents(r.price)}</b></div>

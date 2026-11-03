@@ -175,6 +175,22 @@ function mergePositions(live, saved) {
   });
 }
 
+// Kalshi page for an event: kalshi.com/markets/<series>/m/<event> (the app opens these too)
+function kalshiUrl(eventTicker) {
+  const ev = String(eventTicker || "").toLowerCase();
+  if (!ev) return null;
+  return `https://kalshi.com/markets/${ev.split("-")[0]}/m/${ev}`;
+}
+
+// What it costs right now to buy the OTHER side of a market (the hedge side), from the order book quotes
+function oppositeAsk(m, side) {
+  if (!m) return null;
+  const a = side === "yes" ? num(m.no_ask_dollars) : num(m.yes_ask_dollars);
+  if (a != null && a > 0 && a < 1) return a;
+  const bid = side === "yes" ? num(m.yes_bid_dollars) : num(m.no_bid_dollars);
+  return bid != null && bid > 0 && bid < 1 ? +(1 - bid).toFixed(4) : null;
+}
+
 // ---------- Parlay legs ----------
 // "GOVPARTYGA-26" -> "GA Gov", "SENATEOHS-26" -> "OH Sen (special)", "CONTROLH-2026" -> "House control"
 function legRace(eventTicker) {
@@ -205,6 +221,9 @@ function buildLegs(m, legMarkets) {
     return {
       ticker: l.market_ticker, race: legRace(l.event_ticker), name: side === "no" ? "Not " + name : name, side,
       price, prev, result: lm && lm.result ? lm.result : null,
+      hedgeSide: side === "yes" ? "no" : "yes", hedgeAsk: oppositeAsk(lm, side),
+      hedgeName: lm ? (side === "yes" ? "Not " : "") + (lm.yes_sub_title || lm.title || l.market_ticker) : null,
+      url: kalshiUrl(l.event_ticker || (lm && lm.event_ticker)),
     };
   });
   // Rough "all legs hit" chance if the races were independent. Real races move together, so the
@@ -272,6 +291,7 @@ async function handler(req, res) {
       status: m ? m.status : "unknown", result: m && m.result ? m.result : null,
       title: m ? m.title || null : null,
       closes: m ? m.close_time || null : null,
+      url: m && !parlay ? kalshiUrl(m.event_ticker) : null,
       ...(parlay ? { legs: parlay.legs, legsCombined: parlay.combined, legsAhead: parlay.ahead, legsWon: parlay.won, legsLost: parlay.lost } : {}),
     };
   });
@@ -292,3 +312,5 @@ module.exports.mergePositions = mergePositions;
 module.exports.groupOf = groupOf;
 module.exports.legRace = legRace;
 module.exports.buildLegs = buildLegs;
+module.exports.kalshiUrl = kalshiUrl;
+module.exports.oppositeAsk = oppositeAsk;

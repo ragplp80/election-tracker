@@ -241,3 +241,60 @@ test("bets: page shows a parlay's legs weakest first, and keeps the list open ac
   assert.ok(doc.querySelector(".legs").open, "stays open after refresh");
   dom.window.close();
 });
+
+// ---------- Hedge helper ----------
+function renderBoard(body) {
+  const fs = require("fs"), path = require("path");
+  const { JSDOM } = require("jsdom");
+  const html = fs.readFileSync(path.join(__dirname, "..", "bets.html"), "utf8");
+  const dom = new JSDOM(html, {
+    url: "https://x.test/bets.html?k=secret", runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(w) { w.fetch = async () => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) }); },
+  });
+  return dom;
+}
+const waitFor2 = async (fn) => { for (let i = 0; i < 100 && !fn(); i++) await new Promise((r) => setTimeout(r, 20)); assert.ok(fn()); };
+const leg = (o) => ({ ticker: o.race, side: "yes", result: null, prev: null, hedgeSide: "no", hedgeName: "Not " + o.race, url: "https://kalshi.com/markets/x/m/x-26", ...o });
+const parlayRow = (legs) => ({ ticker: "P", label: "parlay", group: "Parlay", side: "yes", contracts: 292.91, cost: 100, price: 0.3, value: 88, payout: 292.91, status: "active", result: null,
+  legs, legsCombined: 0.5, legsAhead: legs.length, legsWon: legs.filter((l) => l.price === 1).length, legsLost: 0 });
+const boardBody = (rows) => ({ at: Date.now(), source: "account", accountError: null, totals: { cost: 100, value: 88, payout: 292.91, priced: 1, count: 1 }, rows });
+
+test("bets: hedge helper locks in a parlay with two legs left, with Kalshi buttons", async () => {
+  const legs = [leg({ race: "A", price: 1 }), leg({ race: "B", price: 1 }), leg({ race: "TX Sen", price: 0.7, hedgeAsk: 0.3 }), leg({ race: "OH Sen", price: 0.72, hedgeAsk: 0.28 })];
+  const dom = renderBoard(boardBody([parlayRow(legs)]));
+  const doc = dom.window.document;
+  await waitFor2(() => doc.querySelector(".lock"));
+  const box = doc.querySelector(".lock").textContent;
+  // 293 contracts of each hedge: 87.90 + 4.31 fee, 82.04 + 4.14 fee = 178.39; locked 292.91 - 178.39 = 114.52
+  assert.match(box, /2 legs left/);
+  assert.match(box, /293 contracts at ~30¢ ≈ \$92\.21/);
+  assert.match(box, /293 contracts at ~28¢ ≈ \$86\.18/);
+  assert.match(box, /Spend ≈ \$178\.39/);
+  assert.match(box, /at least \$114\.52/);
+  assert.match(box, /\+\$14\.52 vs the \$100\.00 you paid/);
+  const links = [...doc.querySelectorAll(".lock a.kl")];
+  assert.equal(links.length, 2);
+  assert.equal(links[0].getAttribute("href"), "https://kalshi.com/markets/x/m/x-26");
+  assert.equal(links[0].getAttribute("target"), "_blank");
+  dom.window.close();
+});
+
+test("bets: hedge helper waits with 3+ legs open, and stands down once a leg has lost", async () => {
+  let dom = renderBoard(boardBody([parlayRow([leg({ race: "A", price: 0.7, hedgeAsk: 0.3 }), leg({ race: "B", price: 0.7, hedgeAsk: 0.3 }), leg({ race: "C", price: 0.7, hedgeAsk: 0.3 })])]));
+  await waitFor2(() => dom.window.document.querySelector(".waitlock"));
+  assert.match(dom.window.document.querySelector(".waitlock").textContent, /appears when 2 legs are left \(3 open now\)/);
+  assert.equal(dom.window.document.querySelector(".lock"), null);
+  dom.window.close();
+  dom = renderBoard(boardBody([parlayRow([leg({ race: "A", price: 0 }), leg({ race: "B", price: 0.7, hedgeAsk: 0.3 })])]));
+  await waitFor2(() => dom.window.document.querySelector(".waitlock"));
+  assert.match(dom.window.document.querySelector(".waitlock").textContent, /can't pay/);
+  dom.window.close();
+});
+
+test("bets: Kalshi links and hedge prices come from the market data", () => {
+  assert.equal(bets.kalshiUrl("CONTROLS-2026"), "https://kalshi.com/markets/controls/m/controls-2026");
+  assert.equal(bets.kalshiUrl("KXMIDTERMMOV-NEGOVR"), "https://kalshi.com/markets/kxmidtermmov/m/kxmidtermmov-negovr");
+  assert.equal(bets.oppositeAsk({ no_ask_dollars: "0.3000" }, "yes"), 0.3);
+  assert.equal(bets.oppositeAsk({ yes_ask_dollars: "0.2500" }, "no"), 0.25);
+  assert.equal(bets.oppositeAsk({ yes_bid_dollars: "0.7000", no_ask_dollars: "1.0000" }, "yes"), 0.3, "falls back to 1 - bid when no ask");
+});
