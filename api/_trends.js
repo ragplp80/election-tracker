@@ -49,10 +49,16 @@ async function record(races, now = Date.now()) {
     if (!pts.length || pts[pts.length - 1][1] !== v4) pts.push([t, v4]);
   }
   trim(store, now);
+  // Save before returning: the page reads it from a different function, through the shared cache
   saving = saving.then(() => runtimeCache()?.set(KEY, store, { ttl: 7 * 86400, name: "trends" })).catch(() => {});
+  await saving;
   return true;
 }
-async function read() { return load(); }
+// The reader runs in another function, so fetch the shared copy rather than trusting memory
+async function read() {
+  try { const v = await runtimeCache()?.get(KEY); if (v) mem = v; } catch (e) {}
+  return load();
+}
 function reset() { mem = null; }
 
 module.exports = { record, read, reset };
