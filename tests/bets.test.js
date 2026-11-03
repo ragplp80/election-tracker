@@ -442,19 +442,20 @@ test("bets: money map colors states by how your bets there are doing, and lists 
   const doc = dom.window.document;
   await waitFor2(() => doc.querySelector('#map path[data-st="TX"]'));
   const fill = (st) => doc.querySelector(`#map path[data-st="${st}"]`).getAttribute("style");
-  assert.match(fill("TX"), /var\(--up\)/, "TX bet at 55¢: on track");
-  assert.match(fill("FL"), /var\(--down\)/, "FL bet at 40¢: behind");
+  assert.match(fill("TX"), /var\(--up\)/, "TX: worth 9.90 vs 9.60 paid, you're up");
+  assert.match(fill("FL"), /var\(--down\)/, "FL: worth 5.60 vs 10 paid, you're down");
   assert.match(fill("OH"), /var\(--nob\)/, "OH only has a parlay leg: no direct bet");
   assert.equal(doc.querySelectorAll('#map path[fill="url(#mHatch)"]').length, 1, "behind states are hatched too");
   assert.match(doc.getElementById("mapSub").textContent, /2 states · \$19\.60 at stake/);
   assert.match(doc.getElementById("natl").textContent, /Dems 238–241 seats · 18¢/);
   // tap Florida
   doc.querySelector('#map path[data-st="FL"]').dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
-  assert.match(doc.getElementById("mapInfo").textContent, /Florida · Behind · \$10\.00 at stake/);
+  assert.match(doc.getElementById("mapInfo").textContent, /Florida · Down \$4\.40 · \$10\.00 at stake/);
   assert.match(doc.getElementById("mapInfo").textContent, /FL Gov: Donalds40¢−\$4\.40/);
   // switch to parlay legs
   doc.querySelector('#mapModes button[data-m="legs"]').click();
   await waitFor2(() => /var\(--up\)/.test(fill("OH")));
+  assert.match(doc.getElementById("mapLegend").textContent, /Legs favored/);
   assert.match(fill("TX"), /var\(--nob\)/, "no parlay legs in TX");
   assert.match(doc.getElementById("natl").textContent, /House control: Democrats · 93¢/);
   dom.window.close();
@@ -470,4 +471,26 @@ test("bets: page still works when the map and history can't load", async () => {
   assert.equal(doc.querySelector(".spark"), null, "no sparklines without history");
   assert.equal(doc.querySelectorAll(".tile").length, 3);
   dom.window.close();
+});
+
+test("bets: tiles are green when you're up and red when you're down, whatever the odds", async () => {
+  const { body, history } = fullBody();
+  // A long shot bought cheap that has gained: up money, still an underdog
+  body.rows.push({ ticker: "LONG", label: "IN-03: Thompson wins", group: "House", side: "yes", contracts: 27, cost: 1.88, price: 0.28, value: 7.56, payout: 27, status: "active", result: null, st: "IN", sell: { bid: 0.23, value: 5.83 } });
+  // A favorite that has slipped: down money, still favored
+  body.rows.push({ ticker: "FAV", label: "Favorite slipping", group: "House", side: "yes", contracts: 10, cost: 8, price: 0.7, value: 7, payout: 10, status: "active", result: null, st: "OH", sell: { bid: 0.69, value: 6.75 } });
+  history.bets.LONG = history.t.map((_, i) => 0.02 + i * 0.03);
+  history.bets.FAV = history.t.map((_, i) => 0.8 - i * 0.01);
+  const dom = renderRouted({ body, history, map: tinyMap });
+  const doc = dom.window.document;
+  await waitFor2(() => doc.querySelector('.spark[data-t="LONG"]'));
+  const tileOf = (re) => [...doc.querySelectorAll(".tile")].find((t) => re.test(t.querySelector(".label").textContent));
+  const longT = tileOf(/Thompson/), favT = tileOf(/slipping/);
+  assert.ok(longT.classList.contains("up") && !longT.classList.contains("down"), "up money -> green");
+  assert.match(longT.querySelector(".foot").textContent, /Underdog/);
+  assert.ok(favT.classList.contains("down"), "down money -> red, even though favored");
+  assert.match(favT.querySelector(".foot").textContent, /Favored/);
+  assert.match(longT.querySelector(".spark path").getAttribute("stroke"), /--up/, "price rose over the window");
+  assert.match(favT.querySelector(".spark path").getAttribute("stroke"), /--down/, "price fell over the window");
+  assert.match(doc.getElementById("totals").textContent, /2 up · 2 fav/, "TX and the long shot are up; TX and the slipping favorite are favored");
 });

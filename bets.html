@@ -75,7 +75,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 /* Tiles */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 .tile{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--faint);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
-.tile.on{border-left-color:var(--up)} .tile.off{border-left-color:var(--down)}
+.tile.up{border-left-color:var(--up)} .tile.down{border-left-color:var(--down)}
 .tile.won{border-left-color:var(--up);background:color-mix(in srgb,var(--up) 10%,var(--surface))}
 .tile.lost{opacity:.6}
 .top{display:flex;gap:8px;align-items:flex-start}
@@ -83,7 +83,6 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .side{font-size:11px;font-weight:750;padding:2px 7px;border-radius:6px;background:var(--surface2);border:1px solid var(--line);white-space:nowrap}
 .bar{height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--muted)}
-.tile.on .bar i{background:var(--up)} .tile.off .bar i{background:var(--down)}
 .nums{display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums;font-size:14px}
 .nums div{display:flex;flex-direction:column}
 .nums small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
@@ -343,7 +342,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     const x = (i) => (i / (n - 1)) * W, y = (v) => H - 3 - ((v - lo) / (hi - lo)) * (H - 6);
     const half = r.legs || lo > 0.5 || hi < 0.5 ? "" : `<line x1="0" x2="${W}" y1="${y(0.5).toFixed(1)}" y2="${y(0.5).toFixed(1)}" stroke="var(--faint)" stroke-dasharray="2 3" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
     const lastI = s.length - 1, lv = s[lastI], fv = s.find((v) => v != null);
-    const color = r.legs ? "var(--fg)" : lv >= 0.5 ? "var(--up)" : "var(--down)";
+    const color = lv - fv > 0.005 ? "var(--up)" : lv - fv < -0.005 ? "var(--down)" : "var(--muted)";   // rose / fell over the window
     const what = r.legs ? "All-hit estimate" : "Chance";
     return `<div class="spark" data-t="${esc(r.ticker)}" data-what="${what}">
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px" aria-label="${what} over ${range}">${half}<path d="${pathFor(s, x, y)}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><line class="sx" x1="0" x2="0" y1="0" y2="${H}" stroke="var(--muted)" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/></svg>
@@ -457,15 +456,20 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     return { g, natl };
   }
   function stateLook(items) {
-    const w = items.reduce((s, i) => s + (mapMode === "bets" ? i.cost || 0 : 1), 0) || 1;
-    const avg = items.reduce((s, i) => s + (i.price ?? 0.5) * (mapMode === "bets" ? i.cost || 0 : 1), 0) / w;
-    const chance = mapMode === "bets" ? avg : Math.min(...items.map((i) => i.price ?? 0.5));   // legs: the weakest one decides
-    const status = chance >= 0.55 ? "on" : chance <= 0.45 ? "off" : "toss";
+    // My bets: are you up or down in this state. Parlay legs: is the weakest leg there favored.
+    let status, chance = null, pl = null;
+    if (mapMode === "bets") {
+      pl = +items.reduce((s, i) => s + ((i.value ?? i.cost) - (i.cost || 0)), 0).toFixed(2);
+      status = pl > 0.25 ? "on" : pl < -0.25 ? "off" : "even";
+    } else {
+      chance = Math.min(...items.map((i) => i.price ?? 0.5));
+      status = chance >= 0.55 ? "on" : chance <= 0.45 ? "off" : "toss";
+    }
     const weight = mapMode === "bets" ? items.reduce((s, i) => s + (i.cost || 0), 0) : items.length;
     const level = mapMode === "bets" ? (weight >= 20 ? 3 : weight >= 10 ? 2 : 1) : Math.min(3, weight);
-    return { status, level, chance, weight };
+    return { status, level, chance, pl, weight };
   }
-  const fillFor = (s) => s ? `color-mix(in srgb, var(--${s.status === "on" ? "up" : s.status === "off" ? "down" : "warn"}) ${[0, 38, 62, 88][s.level]}%, var(--nob))` : "var(--nob)";
+  const fillFor = (s) => s ? `color-mix(in srgb, var(--${s.status === "on" ? "up" : s.status === "off" ? "down" : s.status === "even" ? "muted" : "warn"}) ${[0, 38, 62, 88][s.level]}%, var(--nob))` : "var(--nob)";
 
   async function loadMap() {
     if (mapTried) return; mapTried = true;
@@ -489,7 +493,9 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     }
     $("map").innerHTML = `<svg viewBox="0 0 ${mapData.w} ${mapData.h}" role="img" aria-label="Map of where your money is">${body}${hatch}</svg>`;
     const sw = (s, l) => `<svg viewBox="0 0 14 10"><rect width="14" height="10" rx="2" style="fill:${fillFor({ status: s, level: l })}"/>${s === "off" ? `<rect width="14" height="10" fill="url(#mHatch)"/>` : ""}</svg>`;
-    $("mapLegend").innerHTML = `<span>${sw("on", 2)}On track</span><span>${sw("toss", 2)}Toss-up</span><span>${sw("off", 2)}Behind</span><span><svg viewBox="0 0 14 10"><rect width="14" height="10" rx="2" style="fill:var(--nob)"/></svg>${mapMode === "bets" ? "No bet" : "Not in a parlay"}</span><span>Darker = ${mapMode === "bets" ? "more money" : "more legs"}</span>`;
+    $("mapLegend").innerHTML = (mapMode === "bets"
+      ? `<span>${sw("on", 2)}You're up</span><span>${sw("even", 2)}About even</span><span>${sw("off", 2)}You're down</span>`
+      : `<span>${sw("on", 2)}Legs favored</span><span>${sw("toss", 2)}Toss-up</span><span>${sw("off", 2)}A leg is behind</span>`) + `<span><svg viewBox="0 0 14 10"><rect width="14" height="10" rx="2" style="fill:var(--nob)"/></svg>${mapMode === "bets" ? "No bet" : "Not in a parlay"}</span><span>Darker = ${mapMode === "bets" ? "more money" : "more legs"}</span>`;
     const stake = [...g.values()].flat().reduce((s, i) => s + (i.cost || 0), 0);
     $("mapSub").textContent = mapMode === "bets" ? `${g.size} states · ${money(stake)} at stake` : `${g.size} states in your parlays`;
     $("natl").innerHTML = natl.length ? `<span><b>National:</b></span>` + natl.map((i) => `<span>${esc(i.label)} · <b>${cents(i.price)}</b></span>`).join("") : "";
@@ -507,7 +513,9 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       return;
     }
     const items = g.get(st), L = looks.get(st), name = mapData.states[st] ? mapData.states[st].n : st;
-    const word = L.status === "on" ? "On track" : L.status === "off" ? "Behind" : "Toss-up";
+    const word = mapMode === "bets"
+      ? (L.status === "on" ? `Up ${money(L.pl)}` : L.status === "off" ? `Down ${money(Math.abs(L.pl))}` : "About even")
+      : (L.status === "on" ? "Legs favored" : L.status === "off" ? "A leg is behind" : "Toss-up");
     box.innerHTML = `<h4>${esc(name)} · ${word}${mapMode === "bets" ? ` · ${money(L.weight)} at stake` : ""}</h4>` + items.map((i) =>
       `<div class="mi"><span>${esc(i.label)}${i.parlay ? ` <span class="hint">(${esc(i.parlay)})</span>` : ""}</span><span>${cents(i.price)}</span><span class="${i.value != null ? (i.value - i.cost >= 0 ? "pos" : "neg") : ""}">${i.value != null ? signed(+(i.value - i.cost).toFixed(2)) : ""}</span></div>`).join("");
   }
@@ -536,13 +544,14 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
   function tile(r) {
     const pl = r.value == null ? null : +(r.value - r.cost).toFixed(2);
     const settled = r.result === "yes" || r.result === "no";
-    const cls = settled ? (r.price === 1 ? "won" : "lost") : r.price == null ? "" : r.price >= 0.5 ? "on" : "off";
+    // Color = are you up or down on this bet (not whether it's favored to win)
+    const cls = settled ? (r.price === 1 ? "won" : "lost") : pl == null ? "" : pl > 0.05 ? "up" : pl < -0.05 ? "down" : "";
     const was = first && first[r.ticker], last = prev && prev[r.ticker];
     const dOpen = was != null && r.price != null ? Math.round((r.price - was) * 100) : 0;
     const dLast = last != null && r.price != null ? Math.round((r.price - last) * 100) : 0;
     const move = dOpen ? `<span class="move ${dOpen > 0 ? "pos" : "neg"}">${dOpen > 0 ? "▲" : "▼"}${Math.abs(dOpen)}¢ since you opened this</span>` : "";
     const flash = dLast ? ` · <span class="${dLast > 0 ? "pos" : "neg"}">${dLast > 0 ? "+" : "−"}${Math.abs(dLast)}¢ just now</span>` : "";
-    const state = settled ? (r.price === 1 ? "WON" : "Lost") : r.status === "unknown" ? "No price" : r.price >= 0.5 ? "On track" : "Behind";
+    const state = settled ? (r.price === 1 ? "WON" : "Lost") : r.status === "unknown" ? "No price" : r.price >= 0.5 ? "Favored" : "Underdog";
     return `<div class="tile ${cls}">
       <div class="top"><div class="label">${esc(r.label)}</div><span class="side">${r.side.toUpperCase()} × ${r.contracts.toFixed(0)}</span>${klink(r.url)}</div>
       <div class="bar"><i style="width:${r.price == null ? 0 : Math.round(r.price * 100)}%"></i></div>
@@ -573,6 +582,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     const rows = data.rows.slice();
     const t = data.totals, pl = +(t.value - t.cost).toFixed(2);
     const on = rows.filter((r) => r.price != null && r.price >= 0.5).length;
+    const upN = rows.filter((r) => r.value != null && r.value - r.cost > 0.05).length;
     const best = rows.filter((r) => r.price != null && r.price >= 0.5).reduce((s, r) => s + r.payout, 0);
     const sellD = t.sell != null ? +(t.sell - t.cost).toFixed(2) : null;
     $("totals").innerHTML = `<div class="totals">
@@ -580,7 +590,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       <div class="stat"><div class="k">Worth now</div><div class="v">${money(t.value)}</div><div class="s">at current prices</div></div>
       <div class="stat"><div class="k">Sell now</div><div class="v">${money(t.sell)}</div><div class="s">${sellD == null ? "" : `cash out now, after fees · <span class="${sellD >= 0 ? "pos" : "neg"}">${signed(sellD)}</span>${rows.some((r) => r.legs) ? "<br>parlays have no buyers" : ""}`}</div></div>
       <div class="stat"><div class="k">Profit / loss</div><div class="v ${pl > 0 ? "pos" : pl < 0 ? "neg" : ""}">${signed(pl)}</div><div class="s">${t.cost ? ((pl / t.cost) * 100).toFixed(1) + "%" : ""}</div></div>
-      <div class="stat"><div class="k">On track</div><div class="v">${on} / ${t.count}</div><div class="s">would pay ${money(best)}</div></div>
+      <div class="stat"><div class="k">Up / favored</div><div class="v">${upN} <span style="font-size:15px;color:var(--muted)">up</span> · ${on} <span style="font-size:15px;color:var(--muted)">fav</span></div><div class="s">of ${t.count} · favored ones pay ${money(best)}</div></div>
       <div class="stat"><div class="k">If all win</div><div class="v">${money(t.payout)}</div><div class="s">max payout</div></div>
     </div>`;
     $("panels").hidden = false;
