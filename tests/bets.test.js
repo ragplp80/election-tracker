@@ -365,7 +365,7 @@ test("bets: history view returns a timeline of P/L for the current bets", async 
 });
 
 // The page, with each request answered by what it asks for
-function renderRouted({ body, history, map }) {
+function renderRouted({ body, history }) {
   const fs = require("fs"), path = require("path");
   const { JSDOM } = require("jsdom");
   const html = fs.readFileSync(path.join(__dirname, "..", "bets.html"), "utf8");
@@ -375,7 +375,6 @@ function renderRouted({ body, history, map }) {
     beforeParse(w) {
       w.fetch = async (u) => {
         u = String(u);
-        if (u.includes("map2026.json")) return map ? ok(map) : { ok: false, status: 404, json: async () => ({}) };
         if (u.includes("view=history")) return history ? ok(history) : { ok: false, status: 502, json: async () => ({}) };
         return ok(body);
       };
@@ -384,7 +383,6 @@ function renderRouted({ body, history, map }) {
   openDoms.push(dom);
   return dom;
 }
-const tinyMap = { w: 975, h: 610, states: { TX: { n: "Texas", d: "M0,0h10v10h-10Z", b: [0, 0, 10, 10] }, FL: { n: "Florida", d: "M20,0h10v10h-10Z", b: [20, 0, 30, 10] }, OH: { n: "Ohio", d: "M40,0h10v10h-10Z", b: [40, 0, 50, 10] } } };
 function fullBody() {
   const now = Math.floor(Date.now() / 1000);
   const t = Array.from({ length: 10 }, (_, i) => now - (9 - i) * 120);
@@ -407,7 +405,7 @@ function fullBody() {
 
 test("bets: page draws the P/L chart, sparklines, your line vs the market, and sell-now", async () => {
   const { body, history } = fullBody();
-  const dom = renderRouted({ body, history, map: tinyMap });
+  const dom = renderRouted({ body, history });
   const doc = dom.window.document;
   await waitFor2(() => doc.querySelector("#chart svg") && doc.querySelector(".spark"));
   // Totals: sell-now stat
@@ -434,39 +432,11 @@ test("bets: page draws the P/L chart, sparklines, your line vs the market, and s
   dom.window.close();
 });
 
-test("bets: money map colors states by how your bets there are doing, and lists them on tap", async () => {
-  const { body, history } = fullBody();
-  body.rows.push({ ticker: "P", label: "2-leg parlay", group: "Parlay", side: "yes", contracts: 50, cost: 10, price: 0.2, value: 10, payout: 50, status: "active", result: null, st: null,
-    legs: [{ ticker: "a", race: "OH Sen (special)", name: "Sherrod Brown", side: "yes", price: 0.72, st: "OH" }, { ticker: "b", race: "House control", name: "Democrats", side: "yes", price: 0.93, st: null }], legsCombined: 0.67, legsAhead: 2, legsWon: 0, legsLost: 0 });
-  const dom = renderRouted({ body, history, map: tinyMap });
-  const doc = dom.window.document;
-  await waitFor2(() => doc.querySelector('#map path[data-st="TX"]'));
-  const fill = (st) => doc.querySelector(`#map path[data-st="${st}"]`).getAttribute("style");
-  assert.match(fill("TX"), /var\(--up\)/, "TX: worth 9.90 vs 9.60 paid, you're up");
-  assert.match(fill("FL"), /var\(--down\)/, "FL: worth 5.60 vs 10 paid, you're down");
-  assert.match(fill("OH"), /var\(--nob\)/, "OH only has a parlay leg: no direct bet");
-  assert.equal(doc.querySelectorAll('#map path[fill="url(#mHatch)"]').length, 1, "behind states are hatched too");
-  assert.match(doc.getElementById("mapSub").textContent, /2 states · \$19\.60 at stake/);
-  assert.match(doc.getElementById("natl").textContent, /Dems 238–241 seats · 18¢/);
-  // tap Florida
-  doc.querySelector('#map path[data-st="FL"]').dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
-  assert.match(doc.getElementById("mapInfo").textContent, /Florida · Down \$4\.40 · \$10\.00 at stake/);
-  assert.match(doc.getElementById("mapInfo").textContent, /FL Gov: Donalds40¢−\$4\.40/);
-  // switch to parlay legs
-  doc.querySelector('#mapModes button[data-m="legs"]').click();
-  await waitFor2(() => /var\(--up\)/.test(fill("OH")));
-  assert.match(doc.getElementById("mapLegend").textContent, /Legs favored/);
-  assert.match(fill("TX"), /var\(--nob\)/, "no parlay legs in TX");
-  assert.match(doc.getElementById("natl").textContent, /House control: Democrats · 93¢/);
-  dom.window.close();
-});
-
-test("bets: page still works when the map and history can't load", async () => {
+test("bets: page still works when history can't load", async () => {
   const { body } = fullBody();
-  const dom = renderRouted({ body, history: null, map: null });
+  const dom = renderRouted({ body, history: null });
   const doc = dom.window.document;
   await waitFor2(() => doc.querySelector(".tile"));
-  await waitFor2(() => doc.getElementById("mapCard").hidden === true);
   await waitFor2(() => /History isn't available/.test(doc.getElementById("chart").textContent));
   assert.equal(doc.querySelector(".spark"), null, "no sparklines without history");
   assert.equal(doc.querySelectorAll(".tile").length, 3);
@@ -481,9 +451,10 @@ test("bets: tiles are green when you're up and red when you're down, whatever th
   body.rows.push({ ticker: "FAV", label: "Favorite slipping", group: "House", side: "yes", contracts: 10, cost: 8, price: 0.7, value: 7, payout: 10, status: "active", result: null, st: "OH", sell: { bid: 0.69, value: 6.75 } });
   history.bets.LONG = history.t.map((_, i) => 0.02 + i * 0.03);
   history.bets.FAV = history.t.map((_, i) => 0.8 - i * 0.01);
-  const dom = renderRouted({ body, history, map: tinyMap });
+  const dom = renderRouted({ body, history });
   const doc = dom.window.document;
   await waitFor2(() => doc.querySelector('.spark[data-t="LONG"]'));
+  assert.equal(doc.getElementById("mapCard"), null, "no money map");
   const tileOf = (re) => [...doc.querySelectorAll(".tile")].find((t) => re.test(t.querySelector(".label").textContent));
   const longT = tileOf(/Thompson/), favT = tileOf(/slipping/);
   assert.ok(longT.classList.contains("up") && !longT.classList.contains("down"), "up money -> green");

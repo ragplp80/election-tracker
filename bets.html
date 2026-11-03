@@ -13,14 +13,14 @@
 :root{
   --bg:#0d1520; --surface:#141e2b; --surface2:#1a2636; --line:#243346;
   --fg:#e6ecf2; --muted:#8b9bb0; --faint:#56667a;
-  --up:#3ccf7e; --down:#f0574a; --warn:#f2b33d; --nob:#223043;
+  --up:#3ccf7e; --down:#f0574a; --warn:#f2b33d;
   --font:-apple-system,"Helvetica Neue",Arial,sans-serif;
   color-scheme:dark;
 }
 @media (prefers-color-scheme:light){:root{
   --bg:#eef1f5; --surface:#fff; --surface2:#f6f8fb; --line:#d8dee6;
   --fg:#121a24; --muted:#5a6878; --faint:#98a4b3;
-  --up:#13894a; --down:#cf2e2e; --warn:#a86a00; --nob:#dfe5ec; color-scheme:light;
+  --up:#13894a; --down:#cf2e2e; --warn:#a86a00; color-scheme:light;
 }}
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -38,8 +38,8 @@ button{font:inherit;font-size:13px;background:var(--surface2);color:var(--fg);bo
 h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 8px;font-weight:650}
 .pos{color:var(--up)} .neg{color:var(--down)}
 
-/* Chart + map panels */
-.panels{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:10px;margin-bottom:6px}
+/* Profit/loss chart */
+.panels{margin-bottom:6px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
 .card[hidden]{display:none}
 .chead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
@@ -57,20 +57,6 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .tip[hidden]{display:none}
 .tip b{font-size:13px}
 .cnote{color:var(--faint);font-size:11px;margin-top:4px}
-.mapbox svg{display:block;width:100%;height:auto}
-.mapbox path.st{stroke:var(--surface);stroke-width:1;cursor:pointer}
-.mapbox path.st.sel{stroke:var(--fg);stroke-width:2}
-.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--muted);margin-top:6px}
-.legend span{display:inline-flex;align-items:center;gap:5px}
-.legend svg{width:14px;height:10px}
-.mapinfo{font-size:13px;margin-top:8px;display:flex;flex-direction:column;gap:4px}
-.mapinfo .mi{display:grid;grid-template-columns:1fr auto auto;gap:10px;font-variant-numeric:tabular-nums}
-.mapinfo .mi span:nth-child(2){font-weight:700}
-.mapinfo .hint{color:var(--muted)}
-.mapinfo h4{margin:2px 0;font-size:13px}
-.natl{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.natl span{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted)}
-.natl b{color:var(--fg)}
 
 /* Tiles */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
@@ -127,7 +113,6 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .waitlock{color:var(--faint);font-size:11px;margin-top:4px}
 .msg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;color:var(--muted);text-align:center}
 @media (max-width:1100px){.totals{grid-template-columns:repeat(3,1fr)}}
-@media (max-width:900px){.panels{grid-template-columns:1fr}}
 @media (max-width:560px){.totals{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:22px}}
 </style>
 </head>
@@ -157,18 +142,6 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     <div class="chartbox" id="chart"><div class="cnote">Loading history…</div></div>
     <div class="cnote" id="chartNote"></div>
   </section>
-  <section class="card" id="mapCard" aria-label="Money map">
-    <div class="chead">
-      <h3>Money map</h3><span class="sub" id="mapSub"></span>
-      <div class="chips" id="mapModes" role="group" aria-label="Map shows">
-        <button data-m="bets">My bets</button><button data-m="legs">Parlay legs</button>
-      </div>
-    </div>
-    <div class="mapbox" id="map"></div>
-    <div class="legend" id="mapLegend"></div>
-    <div class="mapinfo" id="mapInfo"></div>
-    <div class="natl" id="natl"></div>
-  </section>
 </div>
 <div id="board"><div class="msg">Loading…</div></div>
 
@@ -183,8 +156,8 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
   const pts = (v) => (Math.round(v * 10) / 10).toString();
   const store = { get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
   const GROUP_ORDER = ["Senate", "Governor", "House", "Control", "Parlay", "State", "Other"];
-  let first = null, prev = null, data = null, hist = null, mapData = null, mapTried = false, mapSel = null;
-  let range = store.get("board-range", "6h"), mapMode = store.get("board-map", "bets"), lastChartFor = 0;
+  let first = null, prev = null, data = null, hist = null;
+  let range = store.get("board-range", "6h");
   const openLegs = new Set();                    // parlays whose leg list is expanded (kept across refreshes)
   document.addEventListener("toggle", (e) => {
     const d = e.target;
@@ -380,10 +353,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     if (!hist || !hist.t || !hist.pl) return;
     const T = hist.t, P = hist.pl, n = T.length;
     const W = Math.max(320, Math.round(el.clientWidth || 600)), L = 46, R = 58, Tm = 10, B = 24;
-    // Side by side with the map: fill the card to the map's height; stacked: a ratio of the width
-    const mc = $("mapCard"), sideBySide = mc && !mc.hidden && window.innerWidth > 900 && mc.offsetHeight > 0;
-    const H = Math.round(sideBySide ? Math.max(200, Math.min(440, mc.offsetHeight - 92)) : Math.max(200, Math.min(320, W * 0.45)));
-    lastChartFor = sideBySide ? mc.offsetHeight : 0;
+    const H = Math.round(Math.max(200, Math.min(300, W * 0.32)));
     let lo = Math.min(0, ...P), hi = Math.max(0, ...P);
     if (hi - lo < 2) { hi += 1; lo -= 1; }
     const span = hi - lo; lo -= span * 0.08; hi += span * 0.08;
@@ -435,100 +405,6 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     $("chartNote").textContent = "Your current bets, valued at each moment's market price." + (parl ? " Parlays are held at their last trade (no one is quoting them)." : "") + (hist.missing && hist.missing.length ? ` ${hist.missing.length} market${hist.missing.length > 1 ? "s" : ""} had no price history, so they're flat.` : "");
   }
 
-  // ---------- Money map ----------
-  // Each state: money at stake in it and how it's going. Fill = on track / toss-up / behind (behind is
-  // also hatched, so it never depends on red vs green alone). Darker = more money (or more parlay legs).
-  function mapGroups() {
-    const g = new Map(), natl = [];
-    const add = (st, item) => { if (!g.has(st)) g.set(st, []); g.get(st).push(item); };
-    for (const r of data.rows) {
-      if (mapMode === "bets") {
-        if (r.legs) continue;
-        if (r.st) add(r.st, { label: r.label, price: r.price, cost: r.cost, value: r.value });
-        else natl.push({ label: r.label, price: r.price });
-      } else if (r.legs) {
-        for (const l of r.legs) {
-          const item = { label: `${l.race}: ${l.name}`, price: l.price, parlay: r.label, legs: 1 };
-          if (l.st) add(l.st, item); else natl.push(item);
-        }
-      }
-    }
-    return { g, natl };
-  }
-  function stateLook(items) {
-    // My bets: are you up or down in this state. Parlay legs: is the weakest leg there favored.
-    let status, chance = null, pl = null;
-    if (mapMode === "bets") {
-      pl = +items.reduce((s, i) => s + ((i.value ?? i.cost) - (i.cost || 0)), 0).toFixed(2);
-      status = pl > 0.25 ? "on" : pl < -0.25 ? "off" : "even";
-    } else {
-      chance = Math.min(...items.map((i) => i.price ?? 0.5));
-      status = chance >= 0.55 ? "on" : chance <= 0.45 ? "off" : "toss";
-    }
-    const weight = mapMode === "bets" ? items.reduce((s, i) => s + (i.cost || 0), 0) : items.length;
-    const level = mapMode === "bets" ? (weight >= 20 ? 3 : weight >= 10 ? 2 : 1) : Math.min(3, weight);
-    return { status, level, chance, pl, weight };
-  }
-  const fillFor = (s) => s ? `color-mix(in srgb, var(--${s.status === "on" ? "up" : s.status === "off" ? "down" : s.status === "even" ? "muted" : "warn"}) ${[0, 38, 62, 88][s.level]}%, var(--nob))` : "var(--nob)";
-
-  async function loadMap() {
-    if (mapTried) return; mapTried = true;
-    try {
-      const r = await fetch("/map2026.json");
-      const j = r.ok ? await r.json() : null;
-      if (j && j.states && j.w) { mapData = j; drawMap(); } else $("mapCard").hidden = true;
-    } catch (e) { $("mapCard").hidden = true; }
-  }
-
-  function drawMap() {
-    if (!mapData || !data) return;
-    const { g, natl } = mapGroups();
-    const looks = new Map([...g].map(([st, items]) => [st, stateLook(items)]));
-    let body = `<defs><pattern id="mHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="var(--bg)" stroke-width="1.4" stroke-opacity=".55"/></pattern></defs>`;
-    let hatch = "";
-    for (const [st, v] of Object.entries(mapData.states)) {
-      const L = looks.get(st);
-      body += `<path class="st${mapSel === st ? " sel" : ""}" data-st="${st}" d="${v.d}" style="fill:${fillFor(L)}"><title>${esc(v.n)}</title></path>`;
-      if (L && L.status === "off") hatch += `<path d="${v.d}" fill="url(#mHatch)" style="pointer-events:none"/>`;
-    }
-    $("map").innerHTML = `<svg viewBox="0 0 ${mapData.w} ${mapData.h}" role="img" aria-label="Map of where your money is">${body}${hatch}</svg>`;
-    const sw = (s, l) => `<svg viewBox="0 0 14 10"><rect width="14" height="10" rx="2" style="fill:${fillFor({ status: s, level: l })}"/>${s === "off" ? `<rect width="14" height="10" fill="url(#mHatch)"/>` : ""}</svg>`;
-    $("mapLegend").innerHTML = (mapMode === "bets"
-      ? `<span>${sw("on", 2)}You're up</span><span>${sw("even", 2)}About even</span><span>${sw("off", 2)}You're down</span>`
-      : `<span>${sw("on", 2)}Legs favored</span><span>${sw("toss", 2)}Toss-up</span><span>${sw("off", 2)}A leg is behind</span>`) + `<span><svg viewBox="0 0 14 10"><rect width="14" height="10" rx="2" style="fill:var(--nob)"/></svg>${mapMode === "bets" ? "No bet" : "Not in a parlay"}</span><span>Darker = ${mapMode === "bets" ? "more money" : "more legs"}</span>`;
-    const stake = [...g.values()].flat().reduce((s, i) => s + (i.cost || 0), 0);
-    $("mapSub").textContent = mapMode === "bets" ? `${g.size} states · ${money(stake)} at stake` : `${g.size} states in your parlays`;
-    $("natl").innerHTML = natl.length ? `<span><b>National:</b></span>` + natl.map((i) => `<span>${esc(i.label)} · <b>${cents(i.price)}</b></span>`).join("") : "";
-    for (const b of $("mapModes").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.m === mapMode));
-    showState(mapSel, g, looks);
-    const mc = $("mapCard");   // the chart matches the map card's height when they sit side by side
-    if (hist && window.innerWidth > 900 && mc.offsetHeight && Math.abs(mc.offsetHeight - lastChartFor) > 4) requestAnimationFrame(drawChart);
-  }
-
-  function showState(st, g, looks) {
-    if (!g) { const mg = mapGroups(); g = mg.g; looks = new Map([...g].map(([s, items]) => [s, stateLook(items)])); }
-    const box = $("mapInfo");
-    if (!st || !g.has(st)) {
-      box.innerHTML = `<div class="hint">${g.size ? "Tap a state to see what you have riding there." : "Nothing to show on the map yet."}</div>`;
-      return;
-    }
-    const items = g.get(st), L = looks.get(st), name = mapData.states[st] ? mapData.states[st].n : st;
-    const word = mapMode === "bets"
-      ? (L.status === "on" ? `Up ${money(L.pl)}` : L.status === "off" ? `Down ${money(Math.abs(L.pl))}` : "About even")
-      : (L.status === "on" ? "Legs favored" : L.status === "off" ? "A leg is behind" : "Toss-up");
-    box.innerHTML = `<h4>${esc(name)} · ${word}${mapMode === "bets" ? ` · ${money(L.weight)} at stake` : ""}</h4>` + items.map((i) =>
-      `<div class="mi"><span>${esc(i.label)}${i.parlay ? ` <span class="hint">(${esc(i.parlay)})</span>` : ""}</span><span>${cents(i.price)}</span><span class="${i.value != null ? (i.value - i.cost >= 0 ? "pos" : "neg") : ""}">${i.value != null ? signed(+(i.value - i.cost).toFixed(2)) : ""}</span></div>`).join("");
-  }
-
-  $("map").addEventListener("click", (e) => {
-    const p = e.target.closest && e.target.closest("path[data-st]");
-    mapSel = p ? (mapSel === p.dataset.st ? null : p.dataset.st) : null;
-    drawMap();
-  });
-  $("mapModes").addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-m]"); if (!b) return;
-    mapMode = b.dataset.m; store.set("board-map", mapMode); mapSel = null; drawMap();
-  });
 
   // ---------- Tiles ----------
   function sellLine(r) {
@@ -606,7 +482,6 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       const groups = [...new Set(rows.map((r) => r.group))].sort((a, b) => (GROUP_ORDER.indexOf(a) + 99) % 99 - (GROUP_ORDER.indexOf(b) + 99) % 99);
       $("board").innerHTML = groups.map((g) => `<h2>${esc(g)}</h2><div class="grid">${rows.filter((r) => r.group === g).map(tile).join("")}</div>`).join("");
     }
-    drawMap(); loadMap();
   }
 
   async function load() {
