@@ -151,7 +151,8 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
         try { const saved = JSON.parse(sessionStorage.getItem("board-first") || "null"); if (saved) first = saved; } catch (e) {}
         if (!first) { first = Object.fromEntries(data.rows.map((x) => [x.ticker, x.price])); try { sessionStorage.setItem("board-first", JSON.stringify(first)); } catch (e) {} }
       }
-      $("updated").textContent = "Updated " + new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) + (data.totals.priced < data.totals.count ? ` · ${data.totals.count - data.totals.priced} without a price` : "");
+      const where = data.source === "account" ? "Live from your Kalshi account" : data.accountError ? "Kalshi account unreachable — showing saved list" : "From saved list";
+      $("updated").textContent = "Updated " + new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) + " · " + where + (data.totals.priced < data.totals.count ? ` · ${data.totals.count - data.totals.priced} without a price` : "");
       render();
     } catch (e) {
       $("updated").textContent = "Offline — retrying";

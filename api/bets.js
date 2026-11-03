@@ -1,12 +1,19 @@
 // Private "My Bets" board data — GET /api/bets?k=SECRET
 // Not linked from any page. Answers only when k matches the BETS_KEY setting in Vercel;
-// otherwise it looks like a missing page. The positions themselves live in the BETS_POSITIONS
-// setting (JSON), never in this public repo. Prices come from Kalshi's public market data.
+// otherwise it looks like a missing page. Prices come from Kalshi's public market data.
+//
+// Positions: when KALSHI_KEY_ID and KALSHI_PRIVATE_KEY are set in Vercel, they are read live from
+// the Kalshi account (signed, read-only GET /portfolio/positions). The BETS_POSITIONS setting is
+// the backup: it supplies friendly labels and known costs, and the whole list if Kalshi can't be
+// reached. None of these settings are ever in this public repo or sent to the page.
 //
 // BETS_POSITIONS: [{ "t": "KXMIDTERMMOV-TXGOVR-P3", "side": "no", "n": 17.97, "cost": 9.68,
 //                    "label": "TX Gov: Abbott wins by under 3", "group": "Governor" }, ...]
 const crypto = require("crypto");
 const { kget } = require("./_lib.js");
+
+const KALSHI_HOST = "https://api.elections.kalshi.com";
+const API_PREFIX = "/trade-api/v2";
 
 function keyMatches(given) {
   const want = process.env.BETS_KEY || "";
@@ -41,6 +48,104 @@ function sideValue(m, side) {
   return side === "yes" ? yes : 1 - yes;
 }
 
+// ---------- Live positions from the Kalshi account ----------
+
+// Accept the private key however it was pasted into Vercel: real newlines, "\n" escapes,
+// or the whole PEM squashed onto one line with spaces.
+function loadPrivateKey(raw) {
+  let pem = String(raw || "").trim().replace(/\\n/g, "\n").replace(/^["']|["']$/g, "");
+  if (!pem) return null;
+  const m = pem.match(/-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/);
+  const tries = [];
+  if (m) {
+    const body = m[2].replace(/\s+/g, "");
+    tries.push(`-----BEGIN ${m[1]}-----\n${body.match(/.{1,64}/g).join("\n")}\n-----END ${m[1]}-----\n`);
+  } else {
+    const body = pem.replace(/\s+/g, "");
+    for (const kind of ["PRIVATE KEY", "RSA PRIVATE KEY"])
+      tries.push(`-----BEGIN ${kind}-----\n${(body.match(/.{1,64}/g) || []).join("\n")}\n-----END ${kind}-----\n`);
+  }
+  for (const t of tries) { try { return crypto.createPrivateKey(t); } catch (e) {} }
+  throw new Error("KALSHI_PRIVATE_KEY could not be read as a private key");
+}
+
+// Kalshi signs timestamp + method + path (path from /trade-api/v2, without the query string).
+function signRequest(key, ts, method, path) {
+  const msg = Buffer.from(String(ts) + method + path.split("?")[0]);
+  const sig = key.asymmetricKeyType === "rsa" || key.asymmetricKeyType === "rsa-pss"
+    ? crypto.sign("sha256", msg, { key, padding: crypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST })
+    : crypto.sign(null, msg, key);   // Ed25519
+  return sig.toString("base64");
+}
+
+async function signedGet(keyId, key, path) {
+  const ts = Date.now();
+  const r = await fetch(KALSHI_HOST + API_PREFIX + path, {
+    headers: {
+      accept: "application/json",
+      "KALSHI-ACCESS-KEY": keyId,
+      "KALSHI-ACCESS-TIMESTAMP": String(ts),
+      "KALSHI-ACCESS-SIGNATURE": signRequest(key, ts, "GET", API_PREFIX + path),
+    },
+  });
+  if (!r.ok) throw new Error("Kalshi account HTTP " + r.status);
+  return r.json();
+}
+
+const dollars = (m, name) => {
+  const d = num(m[name + "_dollars"]);
+  if (d != null) return d;
+  const c = num(m[name]);
+  return c == null ? null : c / 100;
+};
+
+// Every open position on the account: [{ t, side, n, cost }]
+async function accountPositions() {
+  const keyId = (process.env.KALSHI_KEY_ID || "").trim();
+  if (!keyId || !process.env.KALSHI_PRIVATE_KEY) return null;
+  const key = loadPrivateKey(process.env.KALSHI_PRIVATE_KEY);
+  const out = [];
+  let cursor = "";
+  for (let page = 0; page < 10; page++) {
+    const j = await signedGet(keyId, key, `/portfolio/positions?limit=200&count_filter=position${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
+    for (const m of j.market_positions || []) {
+      const pos = num(m.position_fp) ?? num(m.position);
+      if (!m.ticker || !pos) continue;
+      out.push({ t: m.ticker, side: pos > 0 ? "yes" : "no", n: Math.abs(pos), cost: dollars(m, "market_exposure") });
+    }
+    cursor = j.cursor || "";
+    if (!cursor || !(j.market_positions || []).length) break;
+  }
+  return out;
+}
+
+// Race type from the ticker, for positions that aren't in the saved list
+function groupOf(t) {
+  if (/^KXMVE/.test(t)) return "Parlay";
+  if (/^(KXDHOUSESEATS|KXDSENATESEATS|CONTROL|KXCONTROL)/.test(t)) return "Control";
+  if (/^(SENATE|KXSENATE)/.test(t) || /^KXMIDTERMMOV-[A-Z]{2}SEN/.test(t)) return "Senate";
+  if (/^(GOVPARTY|KXGOV)/.test(t) || /^KXMIDTERMMOV-[A-Z]{2}GOV/.test(t)) return "Governor";
+  if (/^(KXHOUSERACE|HOUSE)/.test(t) || /^KXMIDTERMMOV-[A-Z]{2}\d/.test(t)) return "House";
+  if (/^KXSTATELEG/.test(t)) return "State";
+  return "Other";
+}
+
+// Live account positions, with labels (and, when the holding hasn't changed, the known cost)
+// taken from the saved list. Anything new on the account gets a label from Kalshi's market name.
+function mergePositions(live, saved) {
+  const byTicker = new Map((saved || []).map((p) => [p.t, p]));
+  return live.map((p) => {
+    const s = byTicker.get(p.t);
+    const same = s && s.side === p.side && Math.abs((num(s.n) || 0) - p.n) < 0.01;
+    return {
+      t: p.t, side: p.side, n: p.n,
+      cost: same && num(s.cost) != null ? num(s.cost) : p.cost,
+      label: s && s.side === p.side ? s.label : null,
+      group: s && s.side === p.side ? s.group : groupOf(p.t),
+    };
+  });
+}
+
 async function fetchMarkets(tickers) {
   const out = new Map();
   for (let i = 0; i < tickers.length; i += 50) {
@@ -58,14 +163,27 @@ async function fetchMarkets(tickers) {
   return out;
 }
 
+function autoLabel(m, p) {
+  if (!m) return p.t;
+  const name = m.yes_sub_title || m.title || p.t;
+  return p.side === "no" ? "NO: " + name : name;
+}
+
 async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Robots-Tag", "noindex, nofollow");
   if (req.method !== "GET") return res.status(405).send("Read-only");
   if (!keyMatches(req.query.k)) return res.status(404).send("Not found");
 
-  const positions = readPositions();
-  if (positions === null) return res.status(500).json({ error: "BETS_POSITIONS is not valid JSON" });
+  const saved = readPositions();
+  let positions = saved, source = "saved", accountError = null;
+  try {
+    const live = await accountPositions();
+    if (live) { positions = mergePositions(live, saved || []); source = "account"; }
+  } catch (e) {
+    accountError = String(e.message || e).slice(0, 120);   // never includes key material
+  }
+  if (positions === null) return res.status(500).json({ error: "BETS_POSITIONS is not valid JSON", accountError });
 
   const markets = await fetchMarkets([...new Set(positions.map((p) => p.t))]);
   const rows = positions.map((p) => {
@@ -73,8 +191,8 @@ async function handler(req, res) {
     const v = sideValue(m, p.side);
     const n = num(p.n) || 0, cost = num(p.cost) || 0;
     return {
-      ticker: p.t, label: p.label || (m && m.yes_sub_title) || p.t, group: p.group || "Other",
-      side: p.side, contracts: n, cost,
+      ticker: p.t, label: p.label || autoLabel(m, p), group: p.group || groupOf(p.t),
+      side: p.side, contracts: n, cost, costKnown: num(p.cost) != null,
       price: v,                                         // your side, 0..1
       value: v == null ? null : +(v * n).toFixed(2),
       payout: +n.toFixed(2),                            // each contract pays $1 if it wins
@@ -86,7 +204,7 @@ async function handler(req, res) {
   const sum = (k) => +rows.reduce((s, r) => s + (r[k] || 0), 0).toFixed(2);
   const priced = rows.filter((r) => r.value != null);
   return res.status(200).json({
-    at: Date.now(), rows,
+    at: Date.now(), rows, source, accountError,
     totals: { cost: sum("cost"), value: +priced.reduce((s, r) => s + r.value, 0).toFixed(2), payout: sum("payout"), priced: priced.length, count: rows.length },
   });
 }
@@ -94,3 +212,7 @@ async function handler(req, res) {
 module.exports = handler;
 module.exports.sideValue = sideValue;
 module.exports.keyMatches = keyMatches;
+module.exports.signRequest = signRequest;
+module.exports.loadPrivateKey = loadPrivateKey;
+module.exports.mergePositions = mergePositions;
+module.exports.groupOf = groupOf;
