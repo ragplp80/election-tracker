@@ -29,6 +29,10 @@ test("Still Counting: open races sit in the column their odds put them in; calle
   assert.equal(colOf(pg, "GOVPARTYAZ-26"), "d");
   assert.ok(!pg.d.querySelector('.rc[data-id="SENATENC-26"]'), "called race isn't on the board");
   assert.match(pg.text("#tSen"), /D 35 · R 31/, "34 not up + Cooper; 31 not up");
+  const link = pg.d.querySelector('.rc[data-id="HOUSEAZ2-26"] a.kx');
+  assert.equal(link.getAttribute("href"), "https://kalshi.com/markets/houseaz2/m/houseaz2-26", "each card links to its Kalshi market");
+  link.click();
+  assert.ok(!pg.d.getElementById("raceFrame"), "the link doesn't open the chart");
 });
 
 test("Still Counting: after a refresh, moves are listed and a card that crossed columns is marked", async (t) => {

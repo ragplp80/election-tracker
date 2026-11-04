@@ -179,19 +179,8 @@ function mergePositions(live, saved) {
   });
 }
 
-// Kalshi page for an event: kalshi.com/markets/<series>/m/<event> (the app opens these too)
-// Series whose pages need Kalshi's real slug (the short "/m/" form doesn't open them in the Kalshi app)
-const KALSHI_SLUGS = {
-  kxmidtermmov: "midterm-margin-of-victory",
-  kxvotegeneral: "vote-percentages-in-us-general-elections",
-  kxmidtermvoteturn: "kxmidtermvoteturn",
-};
-function kalshiUrl(eventTicker) {
-  const ev = String(eventTicker || "").toLowerCase();
-  if (!ev) return null;
-  const series = ev.split("-")[0];
-  return `https://kalshi.com/markets/${series}/${KALSHI_SLUGS[series] || "m"}/${ev}`;
-}
+// Kalshi page for an event (shared with the pages; see core.js)
+const kalshiUrl = require("../core.js").kalshiUrl;
 
 // What it costs right now to buy the OTHER side of a market (the hedge side), from the order book quotes
 function oppositeAsk(m, side) {

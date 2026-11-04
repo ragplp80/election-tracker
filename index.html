@@ -72,6 +72,10 @@ html.embed.view-movers body>#table,html.embed.view-feed body>#feed{display:block
 html.embed.view-feed .feedmore,html.embed.view-feed .feedhead{display:none}
 html.embed.view-movers .row,html.embed.view-feed .fe{cursor:default}
 
+/* Kalshi link in a race's chart */
+.kxlink{margin-left:auto;align-self:center;font-size:13px;font-weight:700;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:5px 12px;white-space:nowrap}
+.kxlink:hover{color:var(--fg)}
+
 /* Link to the scenario page */
 .pagelink{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0 10px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-weight:700;font-size:13px;text-decoration:none;color:var(--fg)}
 .pagelink span{color:var(--muted)}
@@ -267,7 +271,7 @@ footer a{color:var(--muted)}
 .sheet-top{display:flex;align-items:flex-start;gap:12px}
 .sheet-top h3{margin:0;font-size:22px;font-weight:800;font-variation-settings:"wdth" 80;line-height:1.1}
 .sheet-top span{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
-.sheet-top .x{margin-left:auto;border:1px solid var(--line);background:var(--surface2);border-radius:8px;width:38px;height:38px;font-size:20px;line-height:1}
+.sheet-top .x{margin-left:0;border:1px solid var(--line);background:var(--surface2);border-radius:8px;width:38px;height:38px;font-size:20px;line-height:1}
 .legend{display:flex;flex-wrap:wrap;gap:8px 18px}
 .leg{display:grid;gap:1px;min-width:0}
 .leg b{font-size:26px;font-weight:800;font-variation-settings:"wdth" 80;line-height:1}
@@ -1365,7 +1369,7 @@ function openDetail(id){
   detail={id,range:store.get("et.range","1d"),series:null,token:0,lastFocus:document.activeElement};
   const bg=document.createElement("div");bg.className="sheet-bg";bg.id="sheetBg";
   bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-    <div class="sheet-top"><div><h3 id="sheetTitle">${esc(r.label)}</h3><span>${esc(r.sub||"Chamber control")}</span></div><button class="x" id="sheetClose" aria-label="Close">×</button></div>
+    <div class="sheet-top"><div><h3 id="sheetTitle">${esc(r.label)}</h3><span>${esc(r.sub||"Chamber control")}</span></div><a class="kxlink" id="sheetKalshi" href="${esc(Core.kalshiUrl(r.id))}" target="_blank" rel="noopener">Open on Kalshi ↗</a><button class="x" id="sheetClose" aria-label="Close">×</button></div>
     <div class="legend" id="sheetLegend"></div>
     <div class="seg" id="rangeSeg" style="justify-self:start">${RANGES.map(x=>`<button data-v="${x.k}" aria-pressed="${x.k===detail.range}">${x.label}</button>`).join("")}</div>
     <div class="readout num" id="readout">Drag across the chart to read exact odds.</div>

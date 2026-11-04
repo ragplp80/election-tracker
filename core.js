@@ -189,8 +189,18 @@
     return { mean, median: pct(0.5), p10: pct(0.1), p90: pct(0.9), pMaj };
   }
 
+  // Kalshi's page for an event: kalshi.com/markets/<series>/m/<event> (the Kalshi app opens these too).
+  // A few series need their real slug in place of "m" for the app to open them.
+  const KALSHI_SLUGS = { kxmidtermmov: "midterm-margin-of-victory", kxvotegeneral: "vote-percentages-in-us-general-elections", kxmidtermvoteturn: "kxmidtermvoteturn" };
+  function kalshiUrl(eventTicker) {
+    const ev = String(eventTicker || "").toLowerCase();
+    if (!ev) return null;
+    const series = ev.split("-")[0];
+    return `https://kalshi.com/markets/${series}/${KALSHI_SLUGS[series] || "m"}/${ev}`;
+  }
+
   const Core = { STATES, SEATS2026, classify, eventMeta, seatKey, seriesKey, isSeat, eventVolume, is2026, slimMarket, slimEvent, untrackedRace,
-    partyOf, priceOf, dProbOf, raceOdds, parseSeatMarket, seatStats, HELD_SEN, HELD_GOV };
+    partyOf, priceOf, dProbOf, raceOdds, parseSeatMarket, seatStats, HELD_SEN, HELD_GOV, kalshiUrl };
   if (typeof module === "object" && module.exports) module.exports = Core;
   else root.Core = Core;
 })(typeof window !== "undefined" ? window : globalThis);
