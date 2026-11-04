@@ -72,7 +72,7 @@ html.embed.view-movers body>#table,html.embed.view-feed body>#feed{display:block
 html.embed.view-feed .feedmore,html.embed.view-feed .feedhead{display:none}
 html.embed.view-movers .row,html.embed.view-feed .fe{cursor:default}
 
-/* Kalshi link in a race's chart */
+/* Market link in a race's chart */
 .kxlink{margin-left:auto;align-self:center;font-size:13px;font-weight:700;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:5px 12px;white-space:nowrap}
 .kxlink:hover{color:var(--fg)}
 
@@ -1369,7 +1369,7 @@ function openDetail(id){
   detail={id,range:store.get("et.range","1d"),series:null,token:0,lastFocus:document.activeElement};
   const bg=document.createElement("div");bg.className="sheet-bg";bg.id="sheetBg";
   bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-    <div class="sheet-top"><div><h3 id="sheetTitle">${esc(r.label)}</h3><span>${esc(r.sub||"Chamber control")}</span></div><a class="kxlink" id="sheetKalshi" href="${esc(Core.kalshiUrl(r.id))}" target="_blank" rel="noopener">Open on Kalshi ↗</a><button class="x" id="sheetClose" aria-label="Close">×</button></div>
+    <div class="sheet-top"><div><h3 id="sheetTitle">${esc(r.label)}</h3><span>${esc(r.sub||"Chamber control")}</span></div><a class="kxlink" id="sheetKalshi" href="${esc(Core.kalshiUrl(r.id))}" target="_blank" rel="noopener">Open market ↗</a><button class="x" id="sheetClose" aria-label="Close">×</button></div>
     <div class="legend" id="sheetLegend"></div>
     <div class="seg" id="rangeSeg" style="justify-self:start">${RANGES.map(x=>`<button data-v="${x.k}" aria-pressed="${x.k===detail.range}">${x.label}</button>`).join("")}</div>
     <div class="readout num" id="readout">Drag across the chart to read exact odds.</div>

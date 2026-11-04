@@ -128,7 +128,7 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 </div>
 <section class="board" id="board"></section>
 
-<div class="foot">Races not called yet, placed by their current odds: toss-up while the leader is under 75%, leaning to a party above that. Cards slide to a new column when the market moves them. Highlights show what changed since the last refresh; a card that crossed columns keeps its badge for 10 minutes. Races at 97%+ fold away at the bottom of their column. Trend lines run from 6pm election night. Refreshes every 30 seconds. Tap a race for its chart, or its Kalshi link to open the market on Kalshi.</div>
+<div class="foot">Races not called yet, placed by their current odds: toss-up while the leader is under 75%, leaning to a party above that. Cards slide to a new column when the market moves them. Highlights show what changed since the last refresh; a card that crossed columns keeps its badge for 10 minutes. Races at 97%+ fold away at the bottom of their column. Trend lines run from 6pm election night. Refreshes every 30 seconds. Tap a race for its chart, or Market to open the betting market itself.</div>
 
 <script src="core.js"></script>
 <script>
@@ -260,7 +260,7 @@ function cardHtml(r,changed){
     <div class="top"><b>${esc(r.label)}</b><span class="p ${r.side} num">${pct(r.p)}</span></div>
     <div class="who"><span class="${r.side}">${esc(r.lead)}</span>${chip}</div>
     ${spark(r)}
-    <div class="moves num"><span>6pm ${mvHtml(d6==null?null:r.d-d6,r)}</span><a class="kx" href="${esc(Core.kalshiUrl(r.id))}" target="_blank" rel="noopener" title="Open this market on Kalshi">Kalshi ↗</a><span>1 hour ${mvHtml(d1==null?null:r.d-d1,r)}</span></div>
+    <div class="moves num"><span>6pm ${mvHtml(d6==null?null:r.d-d6,r)}</span><a class="kx" href="${esc(Core.kalshiUrl(r.id))}" target="_blank" rel="noopener" title="Open this market">Market ↗</a><span>1 hour ${mvHtml(d1==null?null:r.d-d1,r)}</span></div>
     ${c?`<span class="badge">From ${esc(COLNAME[c.from].replace("Leaning ",""))} · ${tm(c.at)}</span>`:""}
   </div>`;
 }
@@ -313,7 +313,7 @@ function openRace(id){
 window.addEventListener("message",e=>{if(e.origin===location.origin&&e.data&&e.data.type==="et-close-race"){const f=$("raceFrame");if(f)f.remove();document.body.style.overflow=""}});
 $("board").addEventListener("click",e=>{
   const more=e.target.closest("[data-safe]");if(more){const k=more.dataset.safe;openSafe.has(k)?openSafe.delete(k):openSafe.add(k);renderBoard();return}
-  if(e.target.closest("a.kx"))return;   // the Kalshi link opens Kalshi, not the chart
+  if(e.target.closest("a.kx"))return;   // the Market link opens the market, not the chart
   const c=e.target.closest(".rc[data-id]");if(c)openRace(c.dataset.id);
 });
 $("board").addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const c=e.target.closest(".rc[data-id]");if(c){e.preventDefault();openRace(c.dataset.id)}});
