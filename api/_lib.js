@@ -22,13 +22,14 @@ async function kget(path, { retries = 4 } = {}) {
   throw lastErr;
 }
 
-// Every open event in a series. Kalshi pages its answers (a multi-district series like
+// Every event in a series, open or closed: on election night a called race's market closes, and
+// it has to stay on the board. Kalshi pages its answers (a multi-district series like
 // KXHOUSERACE has hundreds of events), so follow the cursor to the end.
-async function kgetEvents(series, { pages = 20 } = {}) {
+async function kgetEvents(series, { pages = 20, status = "" } = {}) {
   const out = [];
   let cursor = "";
   for (let i = 0; i < pages; i++) {
-    const e = await kget(`/events?series_ticker=${series}&status=open&with_nested_markets=true&limit=200${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
+    const e = await kget(`/events?series_ticker=${series}${status ? "&status=" + status : ""}&with_nested_markets=true&limit=200${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
     out.push(...(e.events || []));
     cursor = e.cursor || "";
     if (!cursor || !(e.events || []).length) break;
@@ -84,8 +85,10 @@ async function buildCatalog() {
     for (const ev of c.events) {
       const m = Core.eventMeta(c, ev);
       if (!m || !Core.isSeat(m)) continue;
-      const key = Core.seatKey(m), vol = Core.eventVolume(ev), prev = best.get(key);
-      if (!prev || vol > prev.vol || (vol === prev.vol && (m.pref || 0) > (prev.meta.pref || 0))) best.set(key, { meta: m, ev, vol });
+      // Prefer a market still trading; a closed one (a race called tonight) only when that's all there is
+      const key = Core.seatKey(m), vol = Core.eventVolume(ev), live = (ev.markets || []).some((x) => x.status === "active"), prev = best.get(key);
+      const better = !prev || (live && !prev.live) || (live === prev.live && (vol > prev.vol || (vol === prev.vol && (m.pref || 0) > (prev.meta.pref || 0))));
+      if (better) best.set(key, { meta: m, ev, vol, live });
     }
   }
   let seats = null;
@@ -107,7 +110,7 @@ async function marginEvents() {
   const out = [];
   for (const series of ["KXGENERALMOV", "KXMIDTERMMOV"]) {
     try {
-      for (const ev of await kgetEvents(series)) if (MARGIN_EVENT.test(ev.event_ticker)) out.push(Core.slimEvent(ev));
+      for (const ev of await kgetEvents(series, { status: "open" })) if (MARGIN_EVENT.test(ev.event_ticker)) out.push(Core.slimEvent(ev));
     } catch (err) {}
   }
   return out;
@@ -129,7 +132,7 @@ function coverageOf(races, untracked) {
 // when nothing has been kept at all.
 let vercelFns = null;
 try { vercelFns = require("@vercel/functions"); } catch (e) {}   // not installed when testing locally
-const CATALOG_KEY = "catalog-v3", FRESH_MS = 3600e3;
+const CATALOG_KEY = "catalog-v4", FRESH_MS = 3600e3;
 let memCatalog = null, rebuilding = null;
 function runtimeCache() {
   try { return vercelFns && process.env.VERCEL ? vercelFns.getCache() : null; } catch (e) { return null; }

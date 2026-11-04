@@ -85,7 +85,7 @@
   }
 
   // Only the market fields the page uses, to keep responses and saved copies small.
-  const MARKET_FIELDS = ["ticker", "event_ticker", "yes_sub_title", "subtitle", "status", "yes_bid_dollars", "yes_ask_dollars",
+  const MARKET_FIELDS = ["ticker", "event_ticker", "yes_sub_title", "subtitle", "status", "result", "yes_bid_dollars", "yes_ask_dollars",
     "last_price_dollars", "previous_price_dollars", "volume_24h_fp", "volume_fp", "floor_strike", "cap_strike"];
   function slimMarket(m) {
     const o = {};
@@ -124,6 +124,8 @@
   // Midpoint when the spread is tight, otherwise the last trade. prev: yesterday's price.
   function priceOf(m, prev) {
     if (prev) return num(m.previous_price_dollars);
+    if (m.result === "yes") return 1;
+    if (m.result === "no") return 0;
     const bid = num(m.yes_bid_dollars), ask = num(m.yes_ask_dollars), last = num(m.last_price_dollars);
     if (bid && ask && ask - bid <= 0.1) return (bid + ask) / 2;
     return last ?? bid ?? ask;
@@ -139,7 +141,8 @@
   // Democrat's chance, or in a three-way race (a strong independent, 5%+, e.g. Dan Osborn in
   // Nebraska) the chance the Republican loses, out of all candidates.
   function raceOdds(ev) {
-    const outs = (ev.markets || []).filter((m) => m.status !== "finalized").map((m) => ({
+    // Called races stay: a settled or decided market counts as 100% (won) or 0% (lost)
+    const outs = (ev.markets || []).map((m) => ({
       ticker: m.ticker, party: partyOf(m),
       name: (m.yes_sub_title || m.subtitle || m.ticker).replace(/ Party$/, ""),
       p: priceOf(m), p24: priceOf(m, true), vol24: num(m.volume_24h_fp) ?? 0, vol: num(m.volume_fp) ?? 0,

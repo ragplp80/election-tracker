@@ -1087,7 +1087,7 @@ function renderStatus(){
 // Fallback when the snapshot is down: ask for each race's events through the relay.
 let lastMode="";
 async function fullSweep(prog){
-  const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true&status=open`);return{meta,events:j.events||[]}},prog);
+  const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true`);return{meta,events:j.events||[]}},prog);
   const out=[];let errs=0;
   for(const x of res){if(!x||x.error){errs++;continue}for(const ev of x.events){const meta=eventMeta(x.meta,ev);if(meta&&isSeat(meta))out.push({meta,ev})}}
   return{out,errs};

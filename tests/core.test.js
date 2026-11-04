@@ -85,3 +85,12 @@ test("the 2026 seat list: 435 House, 35 Senate, 36 governors, and what counts as
   assert.ok(!Core.isSeat({ type: "senate", st: "CA" }), "no California Senate race in 2026");
   assert.ok(!Core.isSeat({ type: "gov", st: "KY" }), "Kentucky governor is 2027");
 });
+
+test("a called race stays: a decided market counts as 100% for the winner", () => {
+  const ev = { event_ticker: "SENATENC-26", markets: [
+    { ticker: "SENATENC-26-D", yes_sub_title: "Roy Cooper", status: "determined", result: "yes", last_price_dollars: "0.9900" },
+    { ticker: "SENATENC-26-R", yes_sub_title: "Michael Whatley", status: "finalized", result: "no", last_price_dollars: "0.0100" }] };
+  const o = Core.raceOdds(ev);
+  assert.equal(o.d, 1);
+  assert.equal(o.outs[0].name, "Roy Cooper");
+});

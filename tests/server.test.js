@@ -3,6 +3,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { defaultBoard, useFakeKalshi, callHandler } = require("./helpers.js");
 const lib = require("../api/_lib.js");
+const Core = require("../core.js");
 
 function withBoard(board, fn) {
   return async () => {
@@ -211,6 +212,25 @@ test("trends: each price check is recorded once a minute, only changes stored, o
   assert.ok(s.samples.filter((t) => t >= now - 3 * 3600e3).length >= 180, "every minute for the last 3 hours");
   assert.ok(s.samples.filter((t) => t < now - 3 * 3600e3).length <= 3, "one an hour before that");
   assert.deepEqual(s.series["SENATETX-26"].map((p) => p[1]), [6000, 6500], "only the change is stored");
+});
+
+test("catalog: a race whose market closed tonight stays, but a trading market wins when both exist", async () => {
+  const H = require("./helpers.js");
+  const board = defaultBoard();
+  const closed = H.twoParty("SENATENC-26", "Roy Cooper", "Michael Whatley", 0.99);
+  closed.markets.forEach((m) => { m.status = "determined"; m.result = m.ticker.endsWith("-D") ? "yes" : "no"; });
+  board.events.SENATENC = [closed];
+  const old = H.twoParty("KXHOUSERACE-PA07-26", "D", "R", 0.5);
+  old.markets.forEach((m) => { m.status = "finalized"; m.volume_fp = "99999999"; });
+  board.events.KXHOUSERACE = [old];
+  const restore = useFakeKalshi(board, []);
+  try {
+    const cat = await lib.buildCatalog();
+    const nc = cat.races.find((r) => r.meta.type === "senate" && r.meta.st === "NC");
+    assert.ok(nc, "called NC Senate race kept");
+    assert.equal(Core.raceOdds(nc.events[0]).d, 1);
+    assert.equal(cat.races.find((r) => r.meta.st === "PA" && r.meta.dist === 7).meta.series, "HOUSEPA7", "the trading market beats a busier closed one");
+  } finally { restore(); }
 });
 
 test("relay: passes allowed read-only paths, refuses others", withBoard(defaultBoard(), async () => {
