@@ -108,7 +108,7 @@ test("bets: reads live positions from the account with a valid RSA signature", w
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.source, "account");
   assert.ok(seen.length >= 1 && seen.every((s) => s.ok && s.keyId === "8f2a1c3e-1111-4a2b-9c3d-0123456789ab"), "signed with the key id");
-  assert.match(seen[0].search, /count_filter=position/);
+  assert.match(seen[0].search, /count_filter=total_traded/, "asks for closed positions too");
   const byT = Object.fromEntries(res.body.rows.map((r) => [r.ticker, r]));
   assert.equal(res.body.rows.length, 3, "sold/closed saved positions drop off");
   assert.equal(byT["SENATETX-26-D"].label, "TX Sen: Talarico");
@@ -464,4 +464,49 @@ test("bets: tiles are green when you're up and red when you're down, whatever th
   assert.match(longT.querySelector(".spark path").getAttribute("stroke"), /--up/, "price rose over the window");
   assert.match(favT.querySelector(".spark path").getAttribute("stroke"), /--down/, "price fell over the window");
   assert.match(doc.getElementById("totals").textContent, /2 up · 2 fav/, "TX and the long shot are up; TX and the slipping favorite are favored");
+});
+
+test("bets: cashed-out and settled positions come back with their P/L after fees", withAccount({ positions: [
+  ...LIVE.filter((p) => p.ticker !== "SENATEOHS-26-D"),
+  { ticker: "SENATEGA-26-D", position_fp: "0.00", realized_pnl_dollars: "4.2000", fees_paid_dollars: "0.3800", total_traded_dollars: "10.0000" },   // sold for a profit
+  { ticker: "GOVPARTYAZ-26-D", position_fp: "0.00", realized_pnl_dollars: "-2.5000", fees_paid_dollars: "0.2000", total_traded_dollars: "8.0000" }, // sold at a loss
+  { ticker: "SENATETX-26-R", position_fp: "0.00", realized_pnl_dollars: "0", fees_paid_dollars: "0", total_traded_dollars: "0" },                  // never traded: ignored
+  { ticker: "SENATEOHS-26-D", position_fp: "4.00", market_exposure_dollars: "2.8000", realized_pnl_dollars: "1.1000", fees_paid_dollars: "0.1000" }, // partly sold
+] }, async () => {
+  const res = await callHandler(bets, { k: KEY });
+  assert.equal(res.body.source, "account");
+  const c = res.body.closed;
+  assert.equal(c.length, 2, "only positions that were actually traded");
+  assert.equal(c[0].ticker, "SENATEGA-26-D", "best result first");
+  assert.equal(c[0].net, 3.82);
+  assert.equal(c[0].how, "cashed out");
+  assert.match(c[0].label, /GA Sen/);
+  assert.equal(c[1].net, -2.7);
+  assert.equal(res.body.totals.cashedOut, 1.12);
+  const oh = res.body.rows.find((r) => r.ticker === "SENATEOHS-26-D");
+  assert.equal(oh.lockedIn, 1.1, "partial sell shows on the open tile");
+  assert.equal(res.body.totals.lockedIn, 1.1);
+  assert.ok(!res.body.rows.some((r) => r.ticker === "SENATEGA-26-D"), "closed positions aren't open tiles");
+}));
+
+test("bets: page shows cashed-out results and counts them in total P/L", async () => {
+  const { body, history } = fullBody();
+  body.closed = [
+    { ticker: "GA", label: "GA Sen: Ossoff wins", group: "Senate", how: "cashed out", spent: 10, realized: 4.2, fees: 0.38, net: 3.82, url: "https://kalshi.com/markets/senatega/m/senatega-26" },
+    { ticker: "AZ", label: "AZ Gov: Hobbs wins", group: "Governor", how: "settled", spent: 8, realized: -2.5, fees: 0.2, net: -2.7, url: null },
+  ];
+  body.totals.cashedOut = 1.12; body.totals.lockedIn = 1.1;
+  body.rows[0].lockedIn = 1.1;
+  const dom = renderRouted({ body, history });
+  const doc = dom.window.document;
+  await waitFor2(() => doc.getElementById("closed"));
+  const tot = doc.getElementById("totals").textContent;
+  // open P/L = 42 - 40 = +2.00; banked = 1.12 + 1.10 = 2.22; total 4.22
+  assert.match(tot, /Profit \/ loss\+\$4\.22open \+\$2\.00 · cashed out \+\$2\.22/);
+  const cl = doc.getElementById("closed").textContent;
+  assert.match(cl, /2 bets closed · 1 for a profit/);
+  assert.match(cl, /Total \+\$1\.12 after fees/);
+  assert.match(cl, /GA Sen: Ossoff winsCashed out · Kalshi P\/L \+\$4\.20 · fees \$0\.38\s*\+\$3\.82/);
+  assert.match(cl, /AZ Gov: Hobbs winsSettled/);
+  assert.match(doc.querySelector(".tile .locked").textContent, /Already locked in from selling part of this: \+\$1\.10/);
 });

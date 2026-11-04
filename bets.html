@@ -111,6 +111,17 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
 .lock .sum{font-size:13px}
 .lock small{color:var(--muted);font-size:11px}
 .waitlock{color:var(--faint);font-size:11px;margin-top:4px}
+.closed{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 14px}
+.cl{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 14px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.cl:last-child{border-bottom:0}
+.cl .cn{font-weight:650;min-width:0}
+.cl .cn small{display:block;font-weight:400;color:var(--muted);font-size:12px;margin-top:1px}
+.cl .cv{font-size:17px;font-weight:750;text-align:right}
+.cl .cv small{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+.clsum{display:flex;justify-content:space-between;gap:10px;padding:10px 0 6px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line)}
+.clsum b{font-size:15px}
+.locked{font-size:12px;color:var(--muted)}
+.locked b{font-variant-numeric:tabular-nums}
 .msg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;color:var(--muted);text-align:center}
 @media (max-width:1100px){.totals{grid-template-columns:repeat(3,1fr)}}
 @media (max-width:560px){.totals{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:22px}}
@@ -417,6 +428,22 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
     return `<div class="sell">Sell now: <b>${money(s.value)}</b> at ${cents(s.bid)} after fee · <span class="${d >= 0 ? "pos" : "neg"}">${signed(d)}</span> vs paid</div>`;
   }
 
+  // Bets you've cashed out of (or that have settled): what you made or lost on each, after fees
+  function closedBlock() {
+    const c = (data && data.closed) || [];
+    if (!c.length) return "";
+    const total = +c.reduce((s, x) => s + x.net, 0).toFixed(2);
+    const wins = c.filter((x) => x.net > 0).length;
+    return `<h2>Cashed out & settled</h2><div class="closed" id="closed">
+      <div class="clsum"><span>${c.length} bet${c.length > 1 ? "s" : ""} closed · ${wins} for a profit</span><span>Total <b class="${total >= 0 ? "pos" : "neg"}">${signed(total)}</b> after fees</span></div>
+      ${c.map((x) => `<div class="cl">
+        <div class="cn">${esc(x.label)}<small>${x.how === "settled" ? "Settled" : "Cashed out"} · Kalshi P/L ${signed(x.realized)} · fees ${money(x.fees)}</small></div>
+        <div class="cv ${x.net > 0 ? "pos" : x.net < 0 ? "neg" : ""}">${signed(x.net)}<small>after fees</small></div>
+        ${klink(x.url) || "<span></span>"}
+      </div>`).join("")}
+    </div>`;
+  }
+
   function tile(r) {
     const pl = r.value == null ? null : +(r.value - r.cost).toFixed(2);
     const settled = r.result === "yes" || r.result === "no";
@@ -438,6 +465,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
         <div><small>Pays if wins</small><b>${money(r.payout)}</b></div>
       </div>
       ${sellLine(r)}
+      ${r.lockedIn ? `<div class="locked">Already locked in from selling part of this: <b class="${r.lockedIn >= 0 ? "pos" : "neg"}">${signed(r.lockedIn)}</b> (before fees)</div>` : ""}
       ${sparkFor(r)}
       <div class="foot"><span>${state} · paid ${money(r.cost)}${flash}</span>${move}</div>
       ${lineBlock(r)}
@@ -456,7 +484,9 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
   function render() {
     if (!data) return;
     const rows = data.rows.slice();
-    const t = data.totals, pl = +(t.value - t.cost).toFixed(2);
+    const t = data.totals, openPl = +(t.value - t.cost).toFixed(2);
+    const banked = +((t.cashedOut || 0) + (t.lockedIn || 0)).toFixed(2);   // money already made or lost by selling
+    const pl = +(openPl + banked).toFixed(2);
     const on = rows.filter((r) => r.price != null && r.price >= 0.5).length;
     const upN = rows.filter((r) => r.value != null && r.value - r.cost > 0.05).length;
     const best = rows.filter((r) => r.price != null && r.price >= 0.5).reduce((s, r) => s + r.payout, 0);
@@ -465,7 +495,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       <div class="stat"><div class="k">Paid</div><div class="v">${money(t.cost)}</div><div class="s">${t.count} positions</div></div>
       <div class="stat"><div class="k">Worth now</div><div class="v">${money(t.value)}</div><div class="s">at current prices</div></div>
       <div class="stat"><div class="k">Sell now</div><div class="v">${money(t.sell)}</div><div class="s">${sellD == null ? "" : `cash out now, after fees · <span class="${sellD >= 0 ? "pos" : "neg"}">${signed(sellD)}</span>${rows.some((r) => r.legs) ? "<br>parlays have no buyers" : ""}`}</div></div>
-      <div class="stat"><div class="k">Profit / loss</div><div class="v ${pl > 0 ? "pos" : pl < 0 ? "neg" : ""}">${signed(pl)}</div><div class="s">${t.cost ? ((pl / t.cost) * 100).toFixed(1) + "%" : ""}</div></div>
+      <div class="stat"><div class="k">Profit / loss</div><div class="v ${pl > 0 ? "pos" : pl < 0 ? "neg" : ""}">${signed(pl)}</div><div class="s">${banked ? `open ${signed(openPl)} · cashed out <span class="${banked >= 0 ? "pos" : "neg"}">${signed(banked)}</span>` : t.cost ? ((pl / t.cost) * 100).toFixed(1) + "%" : ""}</div></div>
       <div class="stat"><div class="k">Up / favored</div><div class="v">${upN} <span style="font-size:15px;color:var(--muted)">up</span> · ${on} <span style="font-size:15px;color:var(--muted)">fav</span></div><div class="s">of ${t.count} · favored ones pay ${money(best)}</div></div>
       <div class="stat"><div class="k">If all win</div><div class="v">${money(t.payout)}</div><div class="s">max payout</div></div>
     </div>`;
@@ -482,6 +512,7 @@ h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08
       const groups = [...new Set(rows.map((r) => r.group))].sort((a, b) => (GROUP_ORDER.indexOf(a) + 99) % 99 - (GROUP_ORDER.indexOf(b) + 99) % 99);
       $("board").innerHTML = groups.map((g) => `<h2>${esc(g)}</h2><div class="grid">${rows.filter((r) => r.group === g).map(tile).join("")}</div>`).join("");
     }
+    $("board").insertAdjacentHTML("beforeend", closedBlock());
   }
 
   async function load() {

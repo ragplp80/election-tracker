@@ -127,7 +127,8 @@ const dollars = (m, name) => {
   return c == null ? null : c / 100;
 };
 
-// Every open position on the account: [{ t, side, n, cost }]
+// Every market traded on the account, open or closed: [{ t, side, n, cost, realized, fees, traded }]
+// n is 0 for positions you've sold out of (or that have settled); realized is Kalshi's locked-in P/L.
 async function accountPositions() {
   // Tolerate quotes, brackets or a label pasted around the ID: use the ID itself if it's in there
   const rawId = (process.env.KALSHI_KEY_ID || "").trim();
@@ -138,11 +139,12 @@ async function accountPositions() {
   const out = [];
   let cursor = "";
   for (let page = 0; page < 10; page++) {
-    const j = await signedGet(keyId, key, `/portfolio/positions?limit=200&count_filter=position${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
+    const j = await signedGet(keyId, key, `/portfolio/positions?limit=200&count_filter=total_traded${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
     for (const m of j.market_positions || []) {
-      const pos = num(m.position_fp) ?? num(m.position);
-      if (!m.ticker || !pos) continue;
-      out.push({ t: m.ticker, side: pos > 0 ? "yes" : "no", n: Math.abs(pos), cost: dollars(m, "market_exposure") });
+      const pos = num(m.position_fp) ?? num(m.position) ?? 0;
+      const realized = dollars(m, "realized_pnl") || 0, fees = dollars(m, "fees_paid") || 0, traded = dollars(m, "total_traded") || 0;
+      if (!m.ticker || (!pos && !realized && !traded)) continue;
+      out.push({ t: m.ticker, side: pos > 0 ? "yes" : pos < 0 ? "no" : null, n: Math.abs(pos), cost: dollars(m, "market_exposure"), realized, fees, traded });
     }
     cursor = j.cursor || "";
     if (!cursor || !(j.market_positions || []).length) break;
@@ -169,7 +171,7 @@ function mergePositions(live, saved) {
     const s = byTicker.get(p.t);
     const same = s && s.side === p.side && Math.abs((num(s.n) || 0) - p.n) < 0.01;
     return {
-      t: p.t, side: p.side, n: p.n,
+      t: p.t, side: p.side, n: p.n, realized: p.realized || 0,
       cost: same && num(s.cost) != null ? num(s.cost) : p.cost,
       label: s && s.side === p.side ? s.label : null,
       group: s && s.side === p.side ? s.group : groupOf(p.t),
@@ -304,7 +306,7 @@ function autoLabel(m, p) {
   const race = legRace(m.event_ticker);
   if (race && race !== m.event_ticker && !/margin|vote|seats/i.test(m.title || "")) {
     const last = name.split(" ").length > 1 && !/party$/i.test(name) ? name.split(" ").slice(-1)[0] : name;
-    return `${race}: ${last} ${p.side === "no" ? "loses" : "wins"}`;
+    return p.side ? `${race}: ${last} ${p.side === "no" ? "loses" : "wins"}` : `${race}: ${last}`;
   }
   return p.side === "no" ? "NO: " + name : name;
 }
@@ -316,16 +318,20 @@ async function handler(req, res) {
   if (!keyMatches(req.query.k)) return res.status(404).send("Not found");
 
   const saved = readPositions();
-  let positions = saved, source = "saved", accountError = null;
+  let positions = saved, source = "saved", accountError = null, closedLive = [];
   try {
     const live = await accountPositions();
-    if (live) { positions = mergePositions(live, saved || []); source = "account"; }
+    if (live) {
+      positions = mergePositions(live.filter((p) => p.n > 0.0001), saved || []);
+      closedLive = live.filter((p) => p.n <= 0.0001 && (p.realized || p.traded));
+      source = "account";
+    }
   } catch (e) {
     accountError = String(e.message || e).slice(0, 500);   // never includes key material
   }
   if (positions === null) return res.status(500).json({ error: "BETS_POSITIONS is not valid JSON", accountError });
 
-  const markets = await fetchMarkets([...new Set(positions.map((p) => p.t))]);
+  const markets = await fetchMarkets([...new Set(positions.map((p) => p.t).concat(closedLive.map((p) => p.t)))]);
   // Parlays: price every leg too
   const legTickers = new Set();
   for (const m of markets.values()) for (const l of m.mve_selected_legs || []) if (l.market_ticker) legTickers.add(l.market_ticker);
@@ -347,6 +353,7 @@ async function handler(req, res) {
       url: m && !parlay ? kalshiUrl(m.event_ticker) : null,
       st: m && !parlay ? Board.stateOf(m.event_ticker) : null,
       sell: Board.sellNow(m, p.side, n),
+      lockedIn: p.realized ? +p.realized.toFixed(2) : 0,  // from selling part of this position (Kalshi's figure)
       ...(parlay ? { legs: parlay.legs, legsCombined: parlay.combined, legsAhead: parlay.ahead, legsWon: parlay.won, legsLost: parlay.lost } : {}),
     };
   });
@@ -366,13 +373,29 @@ async function handler(req, res) {
     }
   }
 
+  // Positions you've cashed out of, or that have settled: Kalshi's locked-in P/L, less every fee paid on them
+  const savedBy = new Map((saved || []).map((p) => [p.t, p]));
+  const closed = closedLive.map((p) => {
+    const m = markets.get(p.t), sv = savedBy.get(p.t);
+    return {
+      ticker: p.t, label: (sv && sv.label) || autoLabel(m, { t: p.t, side: null }), group: (sv && sv.group) || groupOf(p.t),
+      how: m && m.result ? "settled" : "cashed out", spent: +(p.traded || 0).toFixed(2),
+      realized: +p.realized.toFixed(2), fees: +p.fees.toFixed(2), net: +(p.realized - p.fees).toFixed(2),
+      url: m ? kalshiUrl(m.event_ticker) : null,
+    };
+  }).sort((a, b) => b.net - a.net);
+
   await linesFor(rows, markets);
   const sum = (k) => +rows.reduce((s, r) => s + (r[k] || 0), 0).toFixed(2);
   const priced = rows.filter((r) => r.value != null);
   const sellable = rows.reduce((s, r) => s + (r.sell && r.sell.value != null ? r.sell.value : r.result ? r.value || 0 : 0), 0);
   return res.status(200).json({
-    at: Date.now(), rows, source, accountError,
-    totals: { cost: sum("cost"), value: +priced.reduce((s, r) => s + r.value, 0).toFixed(2), payout: sum("payout"), priced: priced.length, count: rows.length, sell: +sellable.toFixed(2) },
+    at: Date.now(), rows, closed, source, accountError,
+    totals: {
+      cost: sum("cost"), value: +priced.reduce((s, r) => s + r.value, 0).toFixed(2), payout: sum("payout"), priced: priced.length, count: rows.length, sell: +sellable.toFixed(2),
+      cashedOut: +closed.reduce((s, c) => s + c.net, 0).toFixed(2),   // closed positions, after fees
+      lockedIn: sum("lockedIn"),                                         // partial sells on open positions, before fees
+    },
   });
 }
 
