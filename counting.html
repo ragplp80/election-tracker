@@ -236,7 +236,7 @@ function renderTally(){
     <div><div class="banlab">Projected</div><div class="big num"><span class="D">D ${pd}</span> · <span class="R">R ${pr}</span></div>
       <div class="banwin ${pd>=maj?"D":pr>=maj?"R":""}">${pd>=maj?"Democratic majority":pr>=maj?"Republican majority":"No majority yet"}</div></div></div>`;
   $("tSen").innerHTML=`<h2>Senate</h2>${bans(sD,sR,sI,pD,pR,51)}${bar(sD,sR,pD,pR,100,51)}
-    <div class="sub">Majority is 51 (seats not up this year included) · ${openS.length?`${openS.length} still open: ${openS.map(r=>esc(Core.STATES[r.meta.st])).join(", ")}`:"every race called"} · projected = called + each open race's favorite${noMkt.length?` + ${noMkt.map(st=>esc(Core.STATES[st])).join(", ")} (no market, counted ${noMktR?"R":"D"})`:""}</div>`;
+    <div class="sub">Majority is 51 (seats not up this year included) · ${openS.length?`${openS.length} still open: ${openS.map(r=>esc(Core.STATES[r.meta.st])).join(", ")}`:"every race called"} · projected = called + each open race's favorite${noMkt.length?` + ${noMkt.map(st=>esc(Core.STATES[st])).join(", ")} (no market, counted ${!noMktD?"R":!noMktR?"D":"for the party holding each"})`:""}</div>`;
   $("tHouse").innerHTML=`<h2>House</h2>${bans(hD,hR,0,phD,phR,218)}${bar(hD,hR,phD,phR,435,218)}
     <div class="sub">Majority is 218 · ${openH.length} still open · projected = called + each open race's favorite</div>`;
 }
