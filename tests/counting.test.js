@@ -28,7 +28,8 @@ test("Still Counting: open races sit in the column their odds put them in; calle
   assert.equal(colOf(pg, "HOUSEAKAL-26"), "t", "Begich 60%: toss-up");
   assert.equal(colOf(pg, "GOVPARTYAZ-26"), "d");
   assert.ok(!pg.d.querySelector('.rc[data-id="SENATENC-26"]'), "called race isn't on the board");
-  assert.match(pg.text("#tSen"), /D 35 · R 31/, "34 not up + Cooper; 31 not up");
+  assert.match(pg.text("#tSen"), /Called D 35 · R 31/, "34 not up + Cooper; 31 not up");
+  assert.match(pg.text("#tSen"), /Projected D \d+ · R \d+/);
   const link = pg.d.querySelector('.rc[data-id="HOUSEAZ2-26"] a.kx');
   assert.equal(link.getAttribute("href"), "https://kalshi.com/markets/houseaz2/m/houseaz2-26", "each card links to its Kalshi market");
   link.click();

@@ -55,6 +55,10 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 .prog i{position:absolute;top:0;bottom:0}
 .prog .mk{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg)}
 .sub{font-size:12.5px;color:var(--muted)}
+.bans{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.banlab{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.bans .big{white-space:nowrap}
+.banwin{font-size:12px;font-weight:700;margin-top:2px;color:var(--muted)}
 
 /* What just moved */
 .moved{margin:0 0 12px}
@@ -99,7 +103,7 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 .raceframe{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:50;background:transparent}
 
 @media (max-width:860px){.board{grid-template-columns:1fr}.tally{grid-template-columns:1fr}}
-@media (max-width:560px){header{padding:10px 0 8px}h1{font-size:16px}.btn{padding:7px 10px;font-size:13px}.big{font-size:24px}}
+@media (max-width:560px){header{padding:10px 0 8px}h1{font-size:16px}.btn{padding:7px 10px;font-size:13px}.big{font-size:24px}.bans .big{font-size:21px}}
 </style>
 </head>
 <body>
@@ -214,15 +218,27 @@ function diff(){
 
 function renderTally(){
   const c=called,openS=races.filter(r=>r.type==="senate"),openH=races.filter(r=>r.type==="house");
-  const sD=SEN_NOT_UP.D+c.senate.D,sR=SEN_NOT_UP.R+c.senate.R,sI=c.senate.I;
-  const noMkt=Core.SEATS2026.senate.filter(st=>!c.senSeen.has(st));   // seats with no betting market at all (Kentucky)
-  const bar=(d,r,tot,maj)=>`<div class="prog"><i style="left:0;width:${d/tot*100}%;background:var(--dem)"></i><i style="right:0;width:${r/tot*100}%;background:var(--rep)"></i><span class="mk" style="left:${maj/tot*100}%"></span></div>`;
   const fav=(list,p)=>list.filter(r=>(p==="R")===(r.d<0.5)).length;
-  $("tSen").innerHTML=`<h2>Senate · called</h2><div class="big num"><span class="D">D ${sD}</span> · <span class="R">R ${sR}</span>${sI?` · <span class="I">I ${sI}</span>`:""}</div>${bar(sD,sR,100,51)}
-    <div class="sub">Majority is 51 (seats not up this year included)${noMkt.length?` · not counted, no market: ${noMkt.map(st=>esc(Core.STATES[st])).join(", ")}`:""} · ${openS.length?`${openS.length} still open: ${openS.map(r=>esc(Core.STATES[r.meta.st])).join(", ")} · if favorites win: D ${sD+fav(openS,"D")}, R ${sR+fav(openS,"R")}`:"every race called"}</div>`;
-  const hD=c.house.D,hR=c.house.R;
-  $("tHouse").innerHTML=`<h2>House · called</h2><div class="big num"><span class="D">D ${hD}</span> · <span class="R">R ${hR}</span></div>${bar(hD,hR,435,218)}
-    <div class="sub">Majority is 218 · ${openH.length} still open · if favorites win: D ${hD+fav(openH,"D")}, R ${hR+fav(openH,"R")}</div>`;
+  // Senate: called seats (plus the 65 not up this year); projected adds each open race's favorite.
+  // Kentucky has no market: left out of "called", counted for its long-time party (R) in "projected".
+  const noMkt=Core.SEATS2026.senate.filter(st=>!c.senSeen.has(st));
+  const noMktR=noMkt.filter(st=>Core.HELD_SEN[st]==="R").length,noMktD=noMkt.length-noMktR;
+  const sD=SEN_NOT_UP.D+c.senate.D,sR=SEN_NOT_UP.R+c.senate.R,sI=c.senate.I;
+  const pD=sD+fav(openS,"D")+noMktD,pR=sR+fav(openS,"R")+noMktR;
+  const hD=c.house.D,hR=c.house.R,phD=hD+fav(openH,"D"),phR=hR+fav(openH,"R");
+  // Bar: called seats solid, projected seats from open races lighter, majority marked
+  const bar=(d,r,pd,pr,tot,maj)=>`<div class="prog">
+    <i style="left:0;width:${d/tot*100}%;background:var(--dem)"></i><i style="left:${d/tot*100}%;width:${(pd-d)/tot*100}%;background:var(--dem);opacity:.4"></i>
+    <i style="right:0;width:${r/tot*100}%;background:var(--rep)"></i><i style="right:${r/tot*100}%;width:${(pr-r)/tot*100}%;background:var(--rep);opacity:.4"></i>
+    <span class="mk" style="left:${maj/tot*100}%"></span></div>`;
+  const bans=(d,r,i,pd,pr,maj)=>`<div class="bans">
+    <div><div class="banlab">Called</div><div class="big num"><span class="D">D ${d}</span> · <span class="R">R ${r}</span>${i?` · <span class="I">I ${i}</span>`:""}</div></div>
+    <div><div class="banlab">Projected</div><div class="big num"><span class="D">D ${pd}</span> · <span class="R">R ${pr}</span></div>
+      <div class="banwin ${pd>=maj?"D":pr>=maj?"R":""}">${pd>=maj?"Democratic majority":pr>=maj?"Republican majority":"No majority yet"}</div></div></div>`;
+  $("tSen").innerHTML=`<h2>Senate</h2>${bans(sD,sR,sI,pD,pR,51)}${bar(sD,sR,pD,pR,100,51)}
+    <div class="sub">Majority is 51 (seats not up this year included) · ${openS.length?`${openS.length} still open: ${openS.map(r=>esc(Core.STATES[r.meta.st])).join(", ")}`:"every race called"} · projected = called + each open race's favorite${noMkt.length?` + ${noMkt.map(st=>esc(Core.STATES[st])).join(", ")} (no market, counted ${noMktR?"R":"D"})`:""}</div>`;
+  $("tHouse").innerHTML=`<h2>House</h2>${bans(hD,hR,0,phD,phR,218)}${bar(hD,hR,phD,phR,435,218)}
+    <div class="sub">Majority is 218 · ${openH.length} still open · projected = called + each open race's favorite</div>`;
 }
 function renderMoved(){
   const ch=changes;
