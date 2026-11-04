@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Still Counting">
+<title>Still Counting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<style>
+/* Races not called yet, as a board: each card sits in the column the odds put it in and moves
+   when the market moves. Changes since the last refresh are highlighted. */
+:root{
+  --bg:#0d1520; --surface:#141e2b; --surface2:#1a2636; --line:#243346;
+  --fg:#e6ecf2; --muted:#8b9bb0; --faint:#56667a;
+  --dem:#4f8ff7; --rep:#f0574a; --ind:#b38df0; --move:#f2b33d; --ok:#3ccf7a;
+  --font:"Archivo",-apple-system,"Helvetica Neue",Arial,sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root{
+  --bg:#eef1f5; --surface:#fff; --surface2:#f6f8fb; --line:#d8dee6;
+  --fg:#121a24; --muted:#5a6878; --faint:#98a4b3;
+  --dem:#1f5fd6; --rep:#cf2e2e; --ind:#7a4fc9; --move:#a86a00; --ok:#1d9a56; color-scheme:light;
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.35 var(--font);
+  padding:env(safe-area-inset-top,0) max(16px,env(safe-area-inset-right,0px)) max(24px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  -webkit-text-size-adjust:100%}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer}
+.D{color:var(--dem)} .R{color:var(--rep)} .I{color:var(--ind)}
+
+header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:12px 0 10px;position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:22px;font-weight:800;font-variation-settings:"wdth" 75;letter-spacing:.01em;text-transform:uppercase;white-space:nowrap}
+.hctl{display:flex;gap:8px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 12px;font-weight:700;font-size:14px;text-decoration:none;color:var(--fg);white-space:nowrap}
+.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn[disabled]{opacity:.55}
+.status{grid-column:1/-1;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.status b{color:var(--fg);font-weight:600}
+.status>span:last-child{flex:1;min-width:0}
+.dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.dot.stale{background:var(--rep);box-shadow:0 0 0 3px color-mix(in srgb,var(--rep) 25%,transparent)}
+.err{color:var(--rep)}
+h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+
+/* Called tally */
+.tally{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.big{font-size:30px;font-weight:800;font-variation-settings:"wdth" 80;line-height:1.05}
+.prog{height:10px;border-radius:5px;background:var(--surface2);position:relative;overflow:hidden;margin:8px 0 6px}
+.prog i{position:absolute;top:0;bottom:0}
+.prog .mk{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg)}
+.sub{font-size:12.5px;color:var(--muted)}
+
+/* What just moved */
+.moved{margin:0 0 12px}
+.moved .list{display:flex;flex-wrap:wrap;gap:6px}
+.mchip{border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:5px 10px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.mchip b{font-weight:800}
+.mchip.cross{border-color:var(--move);background:color-mix(in srgb,var(--move) 14%,var(--surface))}
+.mchip.called{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--surface))}
+
+/* Board */
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:7px 12px;font-weight:600;font-size:13px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.col{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:120px}
+.colh{display:flex;justify-content:space-between;align-items:baseline;padding:2px 4px 8px}
+.colh h2{margin:0}
+.colh .n{font-size:20px;font-weight:800}
+.col.dcol .colh h2{color:var(--dem)} .col.rcol .colh h2{color:var(--rep)} .col.tcol .colh h2{color:var(--move)}
+.rc{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-top:8px;cursor:pointer;position:relative}
+.rc:hover{border-color:var(--faint)}
+.rc .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.rc .top b{font-size:15px;font-weight:800}
+.rc .p{font-size:18px;font-weight:800}
+.rc .who{font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;gap:8px;margin-top:1px}
+.rc .who span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rc .moves{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:4px}
+.rc svg{display:block;width:100%;height:30px;margin-top:4px}
+.mv{font-weight:800} .mv.flat{color:var(--faint)}
+.chg{font-size:11px;font-weight:800;border-radius:999px;padding:2px 7px;margin-left:6px;white-space:nowrap}
+.chg.D{background:color-mix(in srgb,var(--dem) 22%,transparent)} .chg.R{background:color-mix(in srgb,var(--rep) 22%,transparent)} .chg.I{background:color-mix(in srgb,var(--ind) 22%,transparent)}
+.badge{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:2px 6px;background:var(--move);color:#111;margin-top:6px}
+.rc.crossed{border-color:var(--move);box-shadow:0 0 0 1px var(--move)}
+.rc.flash{animation:flash 2.4s ease-out}
+@keyframes flash{0%{background:color-mix(in srgb,var(--move) 35%,var(--surface2))}100%{background:var(--surface2)}}
+.more{width:100%;margin-top:8px;border:1px dashed var(--line);background:none;border-radius:8px;padding:7px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.empty{color:var(--faint);font-size:13px;padding:8px 4px}
+.foot{font-size:11.5px;color:var(--muted);margin:14px 0}
+.raceframe{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:50;background:transparent}
+
+@media (max-width:860px){.board{grid-template-columns:1fr}.tally{grid-template-columns:1fr}}
+@media (max-width:560px){header{padding:10px 0 8px}h1{font-size:16px}.btn{padding:7px 10px;font-size:13px}.big{font-size:24px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Still Counting</h1>
+  <div class="hctl">
+    <a class="btn" href="./">Live odds</a>
+    <button class="btn primary" id="refresh">Refresh</button>
+  </div>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">Loading the odds…</span></div>
+</header>
+
+<section class="tally">
+  <div class="card" id="tSen"><h2>Senate</h2><div class="sub">Loading…</div></div>
+  <div class="card" id="tHouse"><h2>House</h2><div class="sub">Loading…</div></div>
+</section>
+
+<section class="card moved" id="moved"><h2 id="movedHead">What just moved</h2><div class="list" id="movedList"><span class="sub">Changes show up here after the next refresh.</span></div></section>
+
+<div class="filters">
+  <div class="seg" id="typeSeg"><button data-v="all" aria-pressed="true">All</button><button data-v="senate">Senate</button><button data-v="gov">Governor</button><button data-v="house">House</button></div>
+</div>
+<section class="board" id="board"></section>
+
+<div class="foot">Races not called yet, placed by their current odds: toss-up while the leader is under 75%, leaning to a party above that. Cards slide to a new column when the market moves them. Highlights show what changed since the last refresh; a card that crossed columns keeps its badge for 10 minutes. Races at 97%+ fold away at the bottom of their column. Trend lines run from 6pm election night. Refreshes every 30 seconds. Tap a race for its chart.</div>
+
+<script src="core.js"></script>
+<script>
+"use strict";
+const TOSS=0.75,SAFE=0.97,BADGE_MS=10*60e3,REFRESH_MS=30e3;
+const SIX=Date.parse("2026-11-03T23:00:00Z");             // 6pm ET election night
+const SEN_NOT_UP={D:34,R:31};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.now();
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const pct=p=>Math.round(p*100)+"%";
+const tm=t=>new Date(t).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+
+let races=[],called=null,trends=null,lastAt=null,busy=false,typeFilter=store.get("et.count.type","all"),openSafe=new Set();
+// What each race looked like at the previous refresh (kept on this device, so a reload compares
+// with your last look): id -> {d, col}. Plus when a card last crossed columns: id -> {at, from}.
+let prev=store.get("et.count.prev",null),crossed=store.get("et.count.crossed",{});
+let changes={at:null,since:null,list:[]};
+
+function label(m){
+  if(m.type==="senate")return Core.STATES[m.st]+" Senate";
+  if(m.type==="gov")return Core.STATES[m.st]+" Governor";
+  return m.st+"-"+(m.dist||"AL");
+}
+const colOf=d=>d>=TOSS?"d":d<=1-TOSS?"r":"t";
+const COLNAME={d:"Leaning Democratic",t:"Toss-up",r:"Leaning Republican"};
+const sideOf=(r,d=r.d)=>d>=0.5?(r.ind?"I":"D"):"R";
+const mvHtml=(m,r)=>m==null?'<span class="mv flat">–</span>':Math.abs(m)<0.005?'<span class="mv flat">0</span>':`<span class="mv ${sideOf(r,m>0?1:0)}">${sideOf(r,m>0?1:0)} +${(Math.abs(m)*100).toFixed(1)}</span>`;
+
+function ingest(j){
+  const out=[];called={senate:{D:0,R:0,I:0},house:{D:0,R:0,I:0},gov:{D:0,R:0,I:0},senSeen:new Set()};
+  for(const {meta,ev} of j.races||[]){
+    if(!["senate","gov","house"].includes(meta.type))continue;
+    if(meta.type==="senate")called.senSeen.add(meta.st);
+    const o=Core.raceOdds(ev);if(!o||o.d==null)continue;
+    const ind=o.multi&&o.outs.some(x=>x.party==="I"&&x.p>=0.05);
+    if((ev.markets||[]).some(m=>m.result)){
+      const w=o.outs[0].party,p=w==="D"||w==="R"||w==="I"?w:(o.d>=0.5?"D":"R");called[meta.type][p]++;continue;
+    }
+    const side=o.d>=0.5?(ind?"I":"D"):"R";
+    const lead=o.outs.find(x=>x.party===side)||o.outs[0];
+    out.push({id:ev.event_ticker,meta,type:meta.type,label:label(meta),d:o.d,ind,side,p:Math.max(o.d,1-o.d),
+      lead:lead.name.replace(/ party$/i," Party"),col:colOf(o.d)});
+  }
+  races=out;
+}
+function valueAt(id,t){
+  if(!trends||!trends.samples?.length||trends.samples[0]>t)return null;
+  const ch=trends.series?.[id];if(!ch)return null;let v=null;
+  for(const [ts,x] of ch){if(ts<=t)v=x/1e4;else break}return v;
+}
+function series(r){
+  if(!trends)return[];const ch=trends.series?.[r.id]||[],pts=[];let i=-1;
+  for(const s of trends.samples){if(s<SIX)continue;while(i+1<ch.length&&ch[i+1][0]<=s)i++;if(i>=0)pts.push([s,ch[i][1]/1e4])}
+  pts.push([clockNow(),r.d]);return pts;
+}
+function spark(r){
+  const raw=series(r);if(raw.length<2)return"";
+  const pts=raw.map(([t,v])=>[t,r.side==="R"?1-v:v]);           // plot the current leader's chance
+  const t0=pts[0][0],t1=pts[pts.length-1][0]||t0+1,W=300,H=30;
+  let lo=Math.min(...pts.map(p=>p[1])),hi=Math.max(...pts.map(p=>p[1]));if(hi-lo<0.06){const m=(hi+lo)/2;lo=m-0.03;hi=m+0.03}
+  const X=t=>2+(t-t0)/Math.max(1,t1-t0)*(W-6),Y=v=>H-3-(v-lo)/(hi-lo)*(H-6);
+  const c=r.side==="R"?"var(--rep)":r.side==="I"?"var(--ind)":"var(--dem)",last=pts[pts.length-1];
+  return`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts.map(p=>X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1)).join(" ")}" fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><circle cx="${X(last[0])}" cy="${Y(last[1])}" r="2.6" fill="${c}"/></svg>`;
+}
+
+// Compare with the previous refresh: odds changes, column crossings, races called since then
+function diff(){
+  const now=clockNow(),list=[];
+  if(prev&&prev.v){
+    const ids=new Set(races.map(r=>r.id));
+    for(const r of races){
+      const was=prev.v[r.id];if(!was)continue;
+      const dd=r.d-was.d;
+      if(was.col!==r.col){crossed[r.id]={at:now,from:was.col};list.push({kind:"col",r,dd,from:was.col})}
+      else if(Math.abs(dd)>=0.005)list.push({kind:"odds",r,dd});
+    }
+    for(const [id,was] of Object.entries(prev.v))if(!ids.has(id)&&was.label)list.push({kind:"called",label:was.label});
+  }
+  for(const [id,c] of Object.entries(crossed))if(now-c.at>BADGE_MS)delete crossed[id];
+  list.sort((a,b)=>(a.kind==="called"?-2:a.kind==="col"?-1:0)-(b.kind==="called"?-2:b.kind==="col"?-1:0)||Math.abs(b.dd||0)-Math.abs(a.dd||0));
+  changes={at:now,since:prev?.at||null,list};
+  prev={at:now,v:Object.fromEntries(races.map(r=>[r.id,{d:r.d,col:r.col,label:r.label}]))};
+  store.set("et.count.prev",prev);store.set("et.count.crossed",crossed);
+}
+
+function renderTally(){
+  const c=called,openS=races.filter(r=>r.type==="senate"),openH=races.filter(r=>r.type==="house");
+  const sD=SEN_NOT_UP.D+c.senate.D,sR=SEN_NOT_UP.R+c.senate.R,sI=c.senate.I;
+  const noMkt=Core.SEATS2026.senate.filter(st=>!c.senSeen.has(st));   // seats with no betting market at all (Kentucky)
+  const bar=(d,r,tot,maj)=>`<div class="prog"><i style="left:0;width:${d/tot*100}%;background:var(--dem)"></i><i style="right:0;width:${r/tot*100}%;background:var(--rep)"></i><span class="mk" style="left:${maj/tot*100}%"></span></div>`;
+  const fav=(list,p)=>list.filter(r=>(p==="R")===(r.d<0.5)).length;
+  $("tSen").innerHTML=`<h2>Senate · called</h2><div class="big num"><span class="D">D ${sD}</span> · <span class="R">R ${sR}</span>${sI?` · <span class="I">I ${sI}</span>`:""}</div>${bar(sD,sR,100,51)}
+    <div class="sub">Majority is 51 (seats not up this year included)${noMkt.length?` · not counted, no market: ${noMkt.map(st=>esc(Core.STATES[st])).join(", ")}`:""} · ${openS.length?`${openS.length} still open: ${openS.map(r=>esc(Core.STATES[r.meta.st])).join(", ")} · if favorites win: D ${sD+fav(openS,"D")}, R ${sR+fav(openS,"R")}`:"every race called"}</div>`;
+  const hD=c.house.D,hR=c.house.R;
+  $("tHouse").innerHTML=`<h2>House · called</h2><div class="big num"><span class="D">D ${hD}</span> · <span class="R">R ${hR}</span></div>${bar(hD,hR,435,218)}
+    <div class="sub">Majority is 218 · ${openH.length} still open · if favorites win: D ${hD+fav(openH,"D")}, R ${hR+fav(openH,"R")}</div>`;
+}
+function renderMoved(){
+  const ch=changes;
+  $("movedHead").textContent=ch.since?`What moved since ${tm(ch.since)}`:"What just moved";
+  if(!ch.since){$("movedList").innerHTML=`<span class="sub">Changes show up here after the next refresh.</span>`;return}
+  if(!ch.list.length){$("movedList").innerHTML=`<span class="sub">Nothing moved a point or more since the last refresh.</span>`;return}
+  $("movedList").innerHTML=ch.list.slice(0,14).map(x=>{
+    if(x.kind==="called")return`<span class="mchip called"><b>${esc(x.label)}</b> called</span>`;
+    const s=sideOf(x.r,x.dd>0?1:0),amt=`<b class="${s}">${s} +${(Math.abs(x.dd)*100).toFixed(1)}</b>`;
+    if(x.kind==="col")return`<span class="mchip cross"><b>${esc(x.r.label)}</b> ${COLNAME[x.from]} → ${COLNAME[x.r.col]} ${amt}</span>`;
+    return`<span class="mchip"><b>${esc(x.r.label)}</b> ${amt}</span>`}).join("")
+    +(ch.list.length>14?`<span class="mchip">+${ch.list.length-14} more</span>`:"");
+}
+function cardHtml(r,changed){
+  const now=clockNow(),c=crossed[r.id];
+  const d1=valueAt(r.id,now-3600e3),d6=valueAt(r.id,SIX);
+  const chip=changed&&Math.abs(changed.dd)>=0.005?(()=>{const s=sideOf(r,changed.dd>0?1:0);return`<span class="chg ${s}">${s} +${(Math.abs(changed.dd)*100).toFixed(1)}</span>`})():"";
+  return`<div class="rc${c?" crossed":""}${changed?" flash":""}" data-id="${esc(r.id)}" role="button" tabindex="0">
+    <div class="top"><b>${esc(r.label)}</b><span class="p ${r.side} num">${pct(r.p)}</span></div>
+    <div class="who"><span class="${r.side}">${esc(r.lead)}</span>${chip}</div>
+    ${spark(r)}
+    <div class="moves num"><span>6pm ${mvHtml(d6==null?null:r.d-d6,r)}</span><span>1 hour ${mvHtml(d1==null?null:r.d-d1,r)}</span></div>
+    ${c?`<span class="badge">From ${esc(COLNAME[c.from].replace("Leaning ",""))} · ${tm(c.at)}</span>`:""}
+  </div>`;
+}
+function renderBoard(){
+  // Remember where each card was, so moved cards can slide to their new spot
+  const before=new Map([...document.querySelectorAll(".rc[data-id]")].map(el=>[el.dataset.id,el.getBoundingClientRect()]));
+  const changed=new Map(changes.list.filter(x=>x.r).map(x=>[x.r.id,x]));
+  const list=races.filter(r=>typeFilter==="all"||r.type===typeFilter);
+  const cols={d:[],t:[],r:[]};for(const r of list)cols[r.col].push(r);
+  cols.d.sort((a,b)=>a.d-b.d);cols.r.sort((a,b)=>b.d-a.d);cols.t.sort((a,b)=>Math.abs(a.d-0.5)-Math.abs(b.d-0.5));
+  $("board").innerHTML=["d","t","r"].map(k=>{
+    const close=cols[k].filter(r=>r.p<SAFE),safe=cols[k].filter(r=>r.p>=SAFE),open=openSafe.has(k);
+    return`<div class="col ${k}col" data-col="${k}"><div class="colh"><h2>${COLNAME[k]}</h2><span class="n num">${cols[k].length}</span></div>
+      ${close.map(r=>cardHtml(r,changed.get(r.id))).join("")||(safe.length?"":`<div class="empty">None right now</div>`)}
+      ${safe.length?(open?safe.map(r=>cardHtml(r,changed.get(r.id))).join(""):"")+`<button class="more" data-safe="${k}">${open?"Hide":"Show"} ${safe.length} at 97%+</button>`:""}
+    </div>`}).join("");
+  // Slide cards from their old position to the new one
+  for(const el of document.querySelectorAll(".rc[data-id]")){
+    const was=before.get(el.dataset.id);if(!was||typeof el.animate!=="function")continue;
+    const now=el.getBoundingClientRect(),dx=was.left-now.left,dy=was.top-now.top;
+    if(Math.abs(dx)>4||Math.abs(dy)>4)el.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:"none"}],{duration:700,easing:"cubic-bezier(.2,.8,.2,1)"});
+  }
+}
+function renderStatus(err){
+  const age=lastAt?clockNow()-lastAt:null;
+  $("dot").classList.toggle("stale",!lastAt||age>3*60e3||!!err);
+  $("status").innerHTML=(lastAt?`${races.length} races not called · updated <b>${new Date(lastAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"})}</b> · refreshes every 30 seconds`:"")
+    +(err?` <span class="err">Couldn't load the latest odds (${esc(err)}). Will try again.</span>`:"");
+}
+function render(){renderTally();renderMoved();renderBoard();renderStatus()}
+
+async function refresh(){
+  if(busy)return;busy=true;$("refresh").disabled=true;$("refresh").textContent="Updating…";
+  try{
+    const [s,t]=await Promise.all([fetch("/api/snapshot",{headers:{accept:"application/json"}}),fetch("/api/trends",{headers:{accept:"application/json"}}).catch(()=>null)]);
+    if(!s.ok)throw new Error("HTTP "+s.status);
+    const j=await s.json();if(!Array.isArray(j.races)||!j.races.length)throw new Error("empty");
+    if(t&&t.ok){try{trends=await t.json()}catch(e){}}
+    ingest(j);diff();lastAt=clockNow();render();
+  }catch(e){renderStatus(e.message)}
+  finally{busy=false;$("refresh").disabled=false;$("refresh").textContent="Refresh"}
+}
+
+// Tap a race: the live tracker's chart opens over this page
+function openRace(id){
+  if(!id||$("raceFrame"))return;
+  const f=document.createElement("iframe");f.id="raceFrame";f.className="raceframe";f.title="Race chart";
+  f.src="./?embed=1&race="+encodeURIComponent(id);document.body.appendChild(f);document.body.style.overflow="hidden";
+}
+window.addEventListener("message",e=>{if(e.origin===location.origin&&e.data&&e.data.type==="et-close-race"){const f=$("raceFrame");if(f)f.remove();document.body.style.overflow=""}});
+$("board").addEventListener("click",e=>{
+  const more=e.target.closest("[data-safe]");if(more){const k=more.dataset.safe;openSafe.has(k)?openSafe.delete(k):openSafe.add(k);renderBoard();return}
+  const c=e.target.closest(".rc[data-id]");if(c)openRace(c.dataset.id);
+});
+$("board").addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const c=e.target.closest(".rc[data-id]");if(c){e.preventDefault();openRace(c.dataset.id)}});
+$("typeSeg").addEventListener("click",e=>{const v=e.target.dataset?.v;if(!v)return;typeFilter=v;store.set("et.count.type",v);
+  for(const b of $("typeSeg").querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.v===v);renderBoard()});
+for(const b of $("typeSeg").querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.v===typeFilter);
+$("refresh").addEventListener("click",refresh);
+refresh();
+setInterval(()=>{if(!document.hidden&&clockNow()-(lastAt||0)>=REFRESH_MS-2e3)refresh();else renderStatus()},5e3);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&clockNow()-(lastAt||0)>REFRESH_MS)refresh()});
+</script>
+</body>
+</html>
