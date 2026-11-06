@@ -9,6 +9,7 @@ module.exports = async (req, res) => {
     const buf = Buffer.from(await r.arrayBuffer());
     const text = buf.toString("utf8");
     const links = [...new Set((text.match(/[\w./:%?=&-]+\.(csv|txt|json|zip|xml|xlsx)(\?[\w=&]*)?/gi) || []))].slice(0, 80);
-    res.status(200).json({ status: r.status, type: r.headers.get("content-type"), bytes: buf.length, final: r.url, links, head: text.slice(0, n) });
+    const g = req.query.g ? [...text.matchAll(new RegExp(".{0,120}(?:" + req.query.g + ").{0,160}", "g"))].slice(0, 60).map((m) => m[0]) : undefined;
+    res.status(200).json({ grep: g, status: r.status, type: r.headers.get("content-type"), bytes: buf.length, final: r.url, links, head: text.slice(0, n) });
   } catch (e) { res.status(200).json({ error: String(e), cause: String(e.cause && (e.cause.code || e.cause.message || e.cause)) }); }
 };
