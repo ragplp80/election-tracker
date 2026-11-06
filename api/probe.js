@@ -5,7 +5,7 @@ module.exports = async (req, res) => {
   let host = ""; try { host = new URL(u).hostname; } catch (e) {}
   if (!OK.test(host)) return res.status(400).json({ error: "host not allowed", host });
   try {
-    const r = await fetch(u, { headers: { "user-agent": "Mozilla/5.0 (election tracker)" }, redirect: "follow" });
+    const r = await fetch(u, { headers: { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", accept: "text/html,application/json,*/*", "accept-language": "en-US,en;q=0.9" }, redirect: "follow" });
     const buf = Buffer.from(await r.arrayBuffer());
     let text = buf.toString("utf8");
     if (req.query.pdf) {   // text of a PDF, page by page
