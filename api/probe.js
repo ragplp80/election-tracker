@@ -1,5 +1,5 @@
 // Temporary (preview branch only): look at state election-results files
-const OK = /(ncsbe\.gov|sos\.ca\.gov|vote\.wa\.gov|arizona\.vote|azsos\.gov|alaska\.gov|amazonaws\.com)$/;
+const OK = /(ncsbe\.gov|sos\.ca\.gov|vote\.wa\.gov|arizona\.vote|azsos\.gov|alaska\.gov|amazonaws\.com|votewa\.gov|maricopa\.gov|clarityelections\.com)$/;
 module.exports = async (req, res) => {
   const u = String(req.query.u || ""); const n = +req.query.n || 3000;
   let host = ""; try { host = new URL(u).hostname; } catch (e) {}
@@ -10,5 +10,5 @@ module.exports = async (req, res) => {
     const text = buf.toString("utf8");
     const links = [...new Set((text.match(/[\w./:%?=&-]+\.(csv|txt|json|zip|xml|xlsx)(\?[\w=&]*)?/gi) || []))].slice(0, 80);
     res.status(200).json({ status: r.status, type: r.headers.get("content-type"), bytes: buf.length, final: r.url, links, head: text.slice(0, n) });
-  } catch (e) { res.status(200).json({ error: String(e) }); }
+  } catch (e) { res.status(200).json({ error: String(e), cause: String(e.cause && (e.cause.code || e.cause.message || e.cause)) }); }
 };
