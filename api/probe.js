@@ -7,9 +7,16 @@ module.exports = async (req, res) => {
   try {
     const r = await fetch(u, { headers: { "user-agent": "Mozilla/5.0 (election tracker)" }, redirect: "follow" });
     const buf = Buffer.from(await r.arrayBuffer());
-    const text = buf.toString("utf8");
+    let text = buf.toString("utf8");
+    if (req.query.pdf) {   // text of a PDF, page by page
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const doc = await getDocumentProxy(new Uint8Array(buf));
+      const { text: pages } = await extractText(doc, { mergePages: false });
+      text = pages.map((p, i) => `=== page ${i + 1}\n${p}`).join("\n");
+    }
     const links = [...new Set((text.match(/[\w./:%?=&-]+\.(csv|txt|json|zip|xml|xlsx)(\?[\w=&]*)?/gi) || []))].slice(0, 80);
+    const off = +req.query.o || 0;
     const g = req.query.g ? [...text.matchAll(new RegExp(".{0,120}(?:" + req.query.g + ").{0,160}", "g"))].slice(0, 60).map((m) => m[0]) : undefined;
-    res.status(200).json({ grep: g, status: r.status, type: r.headers.get("content-type"), bytes: buf.length, final: r.url, links, head: text.slice(0, n) });
+    res.status(200).json({ grep: g, status: r.status, type: r.headers.get("content-type"), bytes: buf.length, final: r.url, links, head: text.slice(off, off + n) });
   } catch (e) { res.status(200).json({ error: String(e), cause: String(e.cause && (e.cause.code || e.cause.message || e.cause)) }); }
 };
