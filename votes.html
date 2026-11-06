@@ -115,7 +115,7 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 
 <section class="grid" id="grid" style="margin-top:12px"></section>
 
-<div class="foot">Counts come straight from each state's published results (North Carolina State Board of Elections, California Secretary of State, Washington Secretary of State), checked about every minute while this page is open and every 10 minutes otherwise. A "drop" is any update that changed a race's totals; the record starts from when this page first read each state. Margin is between the top two candidates. Votes left are estimates built from each county's own count of uncounted ballots (in North Carolina, the provisional ballots cast); the projection assumes they split like the recent drops, or like the votes so far when there haven't been enough drops. Market odds are shown for comparison.</div>
+<div class="foot">Counts come straight from each state's published results (North Carolina State Board of Elections, California Secretary of State, Washington Secretary of State), checked about every minute while this page is open and every 10 minutes otherwise. A "drop" is any update that changed a race's totals; the record starts from when this page first read each state. Margin is between the top two candidates. Votes left are estimates built from each county's own count of uncounted ballots (in North Carolina, the provisional ballots cast); the projection splits each county's share the way that county has voted so far. Market odds are shown for comparison.</div>
 
 <script src="core.js"></script>
 <script>
@@ -194,15 +194,18 @@ function leftBox(r){
     const need=P.needs;
     rows+=need==null?"":need>1?`<div class="lrow"><span>${nm(P.trailer)} can't catch up</span><b>would need more than all of them</b></div>`
       :`<div class="lrow"><span>${nm(P.trailer)} needs</span><b class="num ${party(P.trailer)}">${(need*100).toFixed(1)}% of them</b></div>`;
-    const basis=P.basis==="drops"?`the drops since ${tm(P.since)}`:"the votes so far";
-    rows+=`<div class="lrow"><span>If they split like ${basis}${prov?" and all count":""}</span><b class="num ${party(P.leader)}">${nm(P.leader)} +${approx(P.margin)}</b></div>`;
+    const basis=P.basis==="county"?"If each county's split like its votes so far":"If they split like the votes so far";
+    rows+=`<div class="lrow"><span>${basis}${prov?" and all count":""}</span><b class="num ${party(P.leader)}">${nm(P.leader)} +${approx(P.margin)}</b></div>`;
   }
   const parts=(L.parts||[]).filter(p=>p.est>0||p.left);
   const table=parts.length?`<table><tr><th>County</th><th>${prov?"Provisionals":"Ballots left"}</th><th>District share</th><th>Est. votes</th></tr>${parts.map(p=>
     `<tr><td>${esc(p.name)}</td><td>${p.left!=null?n0(p.left):"–"}</td><td>${p.share!=null?Math.round(p.share*100)+"%":"–"}</td><td>${approx(p.est)}</td></tr>`).join("")}</table>`:"";
+  // County estimates more than a day old: some of those ballots may already be counted
+  const old=parts.filter(p=>p.left&&/\d{4}-\d\d-\d\dT/.test(p.asOf||"")&&clockNow()-Date.parse(p.asOf)>864e5);
+  const oldNote=old.length?` ${old.map(p=>esc(p.name)).join(", ").replace(/, ([^,]*)$/," and $1")} ${old.length>1?"haven't":"hasn't"} updated ${old.length>1?"their estimates":"its estimate"} since ${new Date(Math.min(...old.map(p=>Date.parse(p.asOf)))).toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"})}, so some of those ballots may already be counted.`:"";
   const src=(()=>{try{return new URL(L.source).hostname.replace(/^www\./,"")}catch(e){return"source"}})();
   return`<div class="left">${rows}<details><summary>How this is estimated</summary>${table}
-    <p>The ballots left in each county, times the district's share of the votes counted there.${L.note?" "+esc(L.note)+".":""}${L.cure?` About ${approx(L.cure)} more are waiting on voters to fix a signature.`:""}</p>
+    <p>The ballots left in each county, times the district's share of the votes counted there.${L.note?" "+esc(L.note)+".":""}${oldNote}${L.cure?` About ${approx(L.cure)} more are waiting on voters to fix a signature.`:""}</p>
     <p>${L.asOf?`County estimate as of ${esc(/\d{4}-\d\d-\d\dT/.test(L.asOf)?new Date(L.asOf).toLocaleString([], {weekday:"short",hour:"numeric",minute:"2-digit"}):L.asOf)} · `:""}${L.stale?"Couldn't refresh just now; showing the last estimate · ":""}<a href="${esc(L.source)}" target="_blank" rel="noopener">${esc(src)} ↗</a></p></details></div>`;
 }
 function marketRow(r){

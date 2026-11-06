@@ -103,6 +103,12 @@ async function readWA(races) {
 }
 const READERS = { nc: readNC, ca: readCA, wa: readWA };
 
+// Each candidate's share of a county's votes: [[name, votes], ...] -> { name: share }
+function splitOf(pairs) {
+  const t = pairs.reduce((s, [, v]) => s + v, 0);
+  return t > 0 ? Object.fromEntries(pairs.map(([k, v]) => [k, v / t])) : null;
+}
+
 // ---------- Ballots left to count ----------
 // None of the states publish this by district, so each estimate takes the ballots left in each
 // county the district touches and keeps the district's share of them: the district's votes in that
@@ -123,7 +129,8 @@ async function leftWA(race, cur) {
   const parts = (j.ballotItemWithBreakdown?.breakdownResults || []).map((b) => {
     const k = id(b.locality?.id), cast = counted[k], l = left[k];
     const share = cast > 0 ? Math.min(1, num(b.voteTotal) / cast) : 0;
-    return { name: waName(b.locality?.name).replace(/ County$/, ""), left: l ? l.n : null, share, est: l ? l.n * share : 0, asOf: l?.at || null };
+    const split = splitOf((b.ballotOptions || []).filter((o) => !o.isWriteIn).map((o) => [waName(o.name), num(o.voteCount)]));
+    return { name: waName(b.locality?.name).replace(/ County$/, ""), left: l ? l.n : null, share, est: l ? l.n * share : 0, asOf: l?.at || null, split };
   });
   if (!parts.length) throw new Error("no county breakdown");
   const known = parts.filter((p) => p.left != null);
@@ -150,13 +157,15 @@ async function leftCA(race) {
   const countyVotes = async (slug) => {
     const j = JSON.parse(await getText(`https://api.sos.ca.gov/returns/${race.path}/county/${slug}`));
     const first = Array.isArray(j) ? j[0] : j;
-    return (first?.candidates || []).reduce((s, c) => s + num(c.Votes), 0);
+    const pairs = (first?.candidates || []).map((c) => [c.Name, num(c.Votes)]);
+    return { total: pairs.reduce((s, [, v]) => s + v, 0), split: splitOf(pairs) };
   };
-  const share = Math.min(1, (await countyVotes(lc.slug)) / t.processed);
+  const main = await countyVotes(lc.slug);
+  const share = Math.min(1, main.total / t.processed);
   const rate = t.left / t.processed;   // ballots left per ballot counted in San Bernardino
-  const parts = [{ name: lc.name, left: t.left, share, est: t.left * share, asOf: t.asOf }];
+  const parts = [{ name: lc.name, left: t.left, share, est: t.left * share, asOf: t.asOf, split: main.split }];
   for (const [slug, name] of Object.entries(race.otherCounties || {})) {
-    try { const v = await countyVotes(slug); parts.push({ name, left: null, share: null, est: v * rate, asOf: null, assumed: true }); }
+    try { const v = await countyVotes(slug); parts.push({ name, left: null, share: null, est: v.total * rate, asOf: null, assumed: true, split: v.split }); }
     catch (e) { /* a county we can't read just isn't added */ }
   }
   return { est: parts.reduce((s, p) => s + p.est, 0), kind: "uncounted", parts, asOf: t.asOf, source: lc.page,
@@ -186,8 +195,9 @@ async function leftNC(race) {
       const rows = JSON.parse(await getText(ncFile(id)));
       const sum = (re) => rows.filter((r) => re.test(r.cnm || "")).reduce((s, r) => s + num(r.vct), 0);
       const district = sum(race.contest), county = sum(/^US SENATE\b/i);
+      const split = splitOf(rows.filter((r) => race.contest.test(r.cnm || "")).map((r) => [r.bnm, num(r.vct)]));
       const share = county > 0 ? Math.min(1, district / county) : 0;
-      return { name, left: left ?? null, share, est: (left || 0) * share, asOf: null };
+      return { name, left: left ?? null, share, est: (left || 0) * share, asOf: null, split };
     } catch (e) { return { name, left: left ?? null, share: null, est: 0, asOf: null, error: String(e.message || e) }; }
   }));
   const missed = parts.filter((p) => p.error).length;
@@ -218,37 +228,31 @@ async function ballotsLeft(results, now) {
 }
 
 // ---------- Projection ----------
-// How the ballots left might split: like the recent drops if there have been enough of them,
-// otherwise like the votes counted so far.
-const LEAN_MIN = 2000;
-function leanOf(cands, history) {
-  const shares = (v) => { const t = Object.values(v).reduce((s, x) => s + Math.max(0, x), 0); return t > 0 ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, Math.max(0, x) / t])) : null; };
-  const h = history || [];
-  if (h.length >= 2) {
-    // Walk back from the newest drop until the drops add up to enough votes
-    const last = h[h.length - 1].votes;
-    for (let i = h.length - 2; i >= 0; i--) {
-      const gain = Object.fromEntries(Object.keys(last).map((k) => [k, (last[k] || 0) - (h[i].votes[k] || 0)]));
-      const added = Object.values(gain).reduce((s, x) => s + x, 0);
-      if (added >= LEAN_MIN) return { basis: "drops", since: h[i].t, votes: added, shares: shares(gain) };
-    }
-  }
-  return { basis: "so far", votes: cands.reduce((s, c) => s + c.votes, 0), shares: shares(Object.fromEntries(cands.map((c) => [c.name, c.votes]))) };
-}
+// How the ballots left might split. Where we know each county's votes so far, each county's ballots
+// split like that county has voted (where the ballots are matters more than anything else); the
+// rest split like the district's votes so far.
 function project(cands, history, left) {
   if (!cands || cands.length < 2 || !left || !(left.est > 0)) return null;
-  const lean = leanOf(cands, history);
-  if (!lean.shares) return null;
-  const final = Object.fromEntries(cands.map((c) => [c.name, c.votes + left.est * (lean.shares[c.name] || 0)]));
+  const total = cands.reduce((s, c) => s + c.votes, 0);
+  if (!total) return null;
+  const whole = Object.fromEntries(cands.map((c) => [c.name, c.votes / total]));
+  const final = Object.fromEntries(cands.map((c) => [c.name, c.votes]));
+  let byCounty = 0;
+  const parts = (left.parts || []).filter((p) => p.est > 0);
+  const counted = parts.reduce((s, p) => s + p.est, 0);
+  for (const p of parts) {
+    const sp = p.split && cands.every((c) => p.split[c.name] != null) ? p.split : null;
+    if (sp) byCounty += p.est;
+    for (const c of cands) final[c.name] += p.est * (sp ? sp[c.name] : whole[c.name]);
+  }
+  for (const c of cands) final[c.name] += Math.max(0, left.est - counted) * whole[c.name];   // anything not in a county line
   const order = Object.keys(final).sort((a, b) => final[b] - final[a]);
   // What the candidate who is behind now needs from the ballots left (of the votes for the top two)
   const [a, b] = cands, margin = a.votes - b.votes;
-  const twoWay = cands.reduce((s, c) => s + c.votes, 0) ? (a.votes + b.votes) / cands.reduce((s, c) => s + c.votes, 0) : 1;
-  const pool = left.est * twoWay;
+  const pool = left.est * (a.votes + b.votes) / total;
   const needs = pool > 0 ? (pool + margin) / (2 * pool) : null;
-  return { basis: lean.basis, since: lean.since || null, basisVotes: lean.votes, shares: lean.shares,
-    final, leader: order[0], runnerUp: order[1], margin: final[order[0]] - final[order[1]],
-    trailer: b.name, needs };
+  return { basis: byCounty >= left.est * 0.5 ? "county" : "so far", final, leader: order[0], runnerUp: order[1],
+    margin: final[order[0]] - final[order[1]], trailer: b.name, needs };
 }
 
 // ---------- The record of drops ----------
@@ -304,4 +308,4 @@ async function check(now = Date.now()) {
 }
 function reset() { mem = null; leftMem = null; }
 
-const exportsRef = module.exports = { RACES, check, reset, readNC, readCA, readWA, pdfText, leanOf, project, parseSBTable, parseNCProvisionals };
+const exportsRef = module.exports = { RACES, check, reset, readNC, readCA, readWA, pdfText, project, parseSBTable, parseNCProvisionals };

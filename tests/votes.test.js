@@ -159,11 +159,12 @@ test("votes left: each state's county estimates, times the district's share of e
 
   // What the trailing candidate needs, and the margin if the rest split like the votes so far
   const p = r["house-CA-23"].projection;
-  assert.equal(p.basis, "so far");
+  assert.equal(p.basis, "county");
   assert.equal(p.trailer, "Pat Hodge");
   assert.equal(+(p.needs * 100).toFixed(1), 53.4, "(57,600 + 3,896) / (2 × 57,600)");
   assert.equal(p.leader, "Jay Obernolte");
-  assert.equal(Math.round(p.margin), 5370);
+  // San Bernardino 54,400 at 70/136 Obernolte; Riverside 3,200 at 5/8
+  assert.equal(Math.round(p.margin), Math.round(3896 + 54400 * (4000 / 136000) + 3200 * (2000 / 8000)));
 
   // A source that's down shows as an error for that race only
   delete board.states.sb;
@@ -174,18 +175,18 @@ test("votes left: each state's county estimates, times the district's share of e
   assert.ok(r2["house-WA-5"].left.est > 0);
 });
 
-test("votes left: the split follows the most recent drops once they add up to enough votes", () => {
+test("votes left: each county's ballots split like that county has voted so far", () => {
   const votes = require("../api/_votes.js");
-  const h = [{ t: 1, votes: { A: 100, B: 100 } }, { t: 2, votes: { A: 1100, B: 600 } }, { t: 3, votes: { A: 1700, B: 1000 } }];
-  const lean = votes.leanOf([{ name: "A", votes: 1700 }, { name: "B", votes: 1000 }], h);
-  assert.equal(lean.basis, "drops");
-  assert.equal(lean.since, 1, "the last drop alone (1,000 votes) isn't enough, so it reaches back one more");
-  assert.equal(lean.votes, 2500);
-  assert.equal(+lean.shares.A.toFixed(2), 0.64);
-  const few = votes.leanOf([{ name: "A", votes: 1700 }, { name: "B", votes: 1000 }], h.slice(1));
-  assert.equal(few.basis, "so far", "not enough drop votes yet");
-  const p = votes.project([{ name: "A", votes: 1700 }, { name: "B", votes: 1000 }], h, { est: 100 });
-  assert.ok(p.needs > 1, "B can't make up 700 votes out of 100");
+  const cands = [{ name: "A", votes: 6000 }, { name: "B", votes: 5000 }];
+  // 1,000 left in a county voting 80% B, 1,000 in one voting 50/50, 500 with no county split
+  const left = { est: 2500, parts: [{ est: 1000, split: { A: 0.2, B: 0.8 } }, { est: 1000, split: { A: 0.5, B: 0.5 } }, { est: 500 }] };
+  const p = votes.project(cands, [], left);
+  assert.equal(p.basis, "county");
+  assert.equal(Math.round(p.final.A), 6000 + 200 + 500 + 273, "the last 500 split like the race so far (6/11)");
+  assert.equal(p.leader, "A");
+  assert.equal(Math.round(p.margin), 445, "6,972.7 vs 6,527.3");
+  assert.equal(+(p.needs * 100).toFixed(1), 70, "B needs (2,500 + 1,000) / 5,000 of the two-way votes left");
+  assert.ok(votes.project(cands, [], { est: 100 }).needs > 1, "B can't make up 1,000 votes out of 100");
 });
 
 test("Vote Drops page: each card shows the votes left, what the trailing candidate needs, and the projected margin", async (t) => {
@@ -198,7 +199,7 @@ test("Vote Drops page: each card shows the votes left, what the trailing candida
   const ca = card("house-CA-23").querySelector(".left").textContent.replace(/\s+/g, " ");
   assert.match(ca, /Votes left to count \(est\.\)\s*~57,600/);
   assert.match(ca, /Hodge needs\s*53\.4% of them/);
-  assert.match(ca, /If they split like the votes so far\s*Obernolte \+5,400/);
+  assert.match(ca, /If each county's split like its votes so far\s*Obernolte \+6,300/);
   assert.match(ca, /San Bernardino\s*160,000\s*34%\s*54,400/);
   assert.match(ca, /About 680 more are waiting on voters to fix a signature/);
   const nc = card("house-NC-3").querySelector(".left").textContent.replace(/\s+/g, " ");
