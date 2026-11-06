@@ -2,7 +2,6 @@
   "name": "election-tracker",
   "private": true,
   "dependencies": {
-    "@vercel/functions": "3.9.11",
-    "unpdf": "0.12.1"
+    "@vercel/functions": "3.9.11"
   }
 }
