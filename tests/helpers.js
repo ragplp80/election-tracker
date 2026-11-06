@@ -118,12 +118,23 @@ function useFakeKalshi(board, log) {
       const body = board.news ? board.news(new URL(u).searchParams.get("q")) : "<rss><channel></channel></rss>";
       return { ok: true, status: 200, headers: { get: () => null }, text: async () => body };
     }
-    // Fake state results sites: board.states = { nc: rows, ca: { path: json }, wa: items }
+    // Fake state results sites. board.states = { nc: rows (statewide), ncCounties: { n: rows },
+    // ncProv: text of the provisional-ballot PDF, ca: { path: json }, sb: San Bernardino page html,
+    // wa: ballot items, waItem: one contest's file with its county breakdown }
     const st = board.states || {};
-    const ok = (body) => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(body) });
-    const no = { ok: false, status: 404, headers: { get: () => null }, text: async () => "" };
-    if (u.startsWith("https://er.ncsbe.gov/")) { log.push("STATE nc"); return st.nc ? ok(st.nc) : no; }
+    const body = (b) => (typeof b === "string" ? b : JSON.stringify(b));
+    const ok = (b) => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => body(b), arrayBuffer: async () => new TextEncoder().encode(body(b)).buffer });
+    const no = { ok: false, status: 404, headers: { get: () => null }, text: async () => "", arrayBuffer: async () => new ArrayBuffer(0) };
+    let m;
+    if ((m = u.match(/^https:\/\/er\.ncsbe\.gov\/enr\/\d+\/data\/results_(\d+)\.txt/))) {
+      log.push("STATE nc " + m[1]);
+      const rows = m[1] === "0" ? st.nc : st.ncCounties && st.ncCounties[m[1]];
+      return rows ? ok(rows) : no;
+    }
+    if (u.startsWith("https://s3.amazonaws.com/dl.ncsbe.gov/")) { log.push("STATE nc provisionals"); return st.ncProv ? ok(st.ncProv) : no; }
     if (u.startsWith("https://api.sos.ca.gov/returns/")) { const k = u.slice("https://api.sos.ca.gov/returns/".length); log.push("STATE ca " + k); return st.ca && st.ca[k] ? ok(st.ca[k]) : no; }
+    if (u.startsWith("https://elections.sbcounty.gov/")) { log.push("STATE sb"); return st.sb ? ok(st.sb) : no; }
+    if (u.startsWith("https://results.votewa.gov/") && /\/data\/ballot-item\//.test(u)) { log.push("STATE wa item"); return st.waItem ? ok(st.waItem) : no; }
     if (u.startsWith("https://results.votewa.gov/")) { log.push("STATE wa"); return st.wa ? ok({ data: st.wa }) : no; }
     return realFetch(url, opts);
   };

@@ -97,3 +97,114 @@ test("Vote Drops page: shows each race's margin, and after new votes, the drop a
   assert.match(pg.text("#newList"), /NC-3 .* \+350 · Lee \+250/);
   assert.deepEqual(pg.errors, []);
 });
+
+// ---------- Ballots left to count ----------
+function full() {
+  const s = states();
+  s.wa[0].id = "item5";
+  s.waItem = {
+    localityElections: [{ jurisdictionId: "A", ballotsCast: 10000 }, { jurisdictionId: "B", ballotsCast: 50000 }, { jurisdictionId: "C", ballotsCast: 4000 }],
+    statistics: [{ name: [{ text: "Estimated Ballots Left to Count - by county" }], groups: [{ children: [
+      { id: "a", name: [{ text: "Adams County" }], value: 1000, lastUpdated: "2026-11-06T16:00:00Z" },
+      { id: "b", name: [{ text: "Spokane County" }], value: 6000, lastUpdated: "2026-11-06T18:00:00Z" }] }] }],
+    ballotItemWithBreakdown: { breakdownResults: [
+      { locality: { id: "A", name: [{ text: "Adams County" }] }, voteTotal: 9500 },
+      { locality: { id: "B", name: [{ text: "Spokane County" }] }, voteTotal: 20000 },
+      { locality: { id: "C", name: [{ text: "Ferry County" }] }, voteTotal: 3800 }] },
+  };
+  s.sb = `<p><strong>Estimated unprocessed ballot reporting as of November 5, 2026, at 5:45 p.m.</strong></p><table><tbody>
+    <tr><td width="700">1. Cumulative total number of processed ballots (includes ballots tabulated on election night)</td><td style="text-align: right">400,000</td></tr>
+    <tr><td>7. Provisional ballots</td><td>4,600</td></tr>
+    <tr><td width="650">10. TOTAL ESTIMATED NUMBER OF UNPROCESSED BALLOTS (total includes #3-9)</td><td style="text-align: right" width="90">160,000</td></tr>
+    <tr><td width="650">11. Ballots left to cure (noncomparable signatures)</td><td style="text-align: right" width="90">2,000</td></tr></tbody></table>`;
+  s.ca["us-rep/district/23/county/san-bernardino"] = [{ candidates: [{ Name: "Pat Hodge", Votes: "66,000" }, { Name: "Jay Obernolte", Votes: "70,000" }] }, {}];
+  s.ca["us-rep/district/23/county/riverside"] = [{ candidates: [{ Name: "Pat Hodge", Votes: "3,000" }, { Name: "Jay Obernolte", Votes: "5,000" }] }, {}];
+  const house = (n, a, b) => [{ cnm: "US HOUSE OF REPRESENTATIVES DISTRICT 03 (VOTE FOR 1)", bnm: "Ann Lee", vct: String(a) }, { cnm: "US HOUSE OF REPRESENTATIVES DISTRICT 03 (VOTE FOR 1)", bnm: "Bob Ray", vct: String(b) }];
+  const senate = (n) => [{ cnm: "US SENATE (VOTE FOR 1)", bnm: "X", vct: String(n / 2) }, { cnm: "US SENATE (VOTE FOR 1)", bnm: "Y", vct: String(n / 2) }];
+  s.ncCounties = { 31: [...house(31, 1500, 1500), ...senate(3000)], 74: [...house(74, 30000, 30000), ...senate(100000)] };
+  s.ncProv = "Provisional Ballots Cast by Voting Method, County\nCounty Total\nDUPLIN 125 32 0 0 157\nNEW HANOVER 858 178 0 0 1,036\nPITT 1,002 114 0 0 1,116\nStatewide 30,745 6,043 0 0 36,788";
+  return s;
+}
+function withPdfStub(t) {
+  const votes = require("../api/_votes.js"), real = votes.pdfText;
+  votes.pdfText = async (buf) => Buffer.from(buf).toString("utf8");
+  t.after(() => { votes.pdfText = real; });
+  return votes;
+}
+
+test("votes left: each state's county estimates, times the district's share of each county", async (t) => {
+  const board = defaultBoard(); board.states = full();
+  t.after(useFakeKalshi(board, []));
+  const votes = withPdfStub(t);
+  const r = byKey(await votes.check(1000));
+
+  const wa = r["house-WA-5"].left;
+  assert.equal(Math.round(wa.est), 3350, "1,000 × 95% (Adams) + 6,000 × 40% (Spokane)");
+  assert.deepEqual(wa.parts.map((p) => [p.name, p.left, +p.share.toFixed(2)]), [["Adams", 1000, 0.95], ["Spokane", 6000, 0.4], ["Ferry", null, 0.95]]);
+  assert.equal(wa.asOf, "2026-11-06T18:00:00Z", "the newest county estimate");
+  assert.match(wa.note, /1 county hasn't posted/);
+
+  const ca = r["house-CA-23"].left;
+  assert.equal(Math.round(ca.est), 57600, "160,000 × 34% in San Bernardino, plus Riverside's 8,000 votes × 0.4");
+  assert.equal(ca.asOf, "November 5, 2026, at 5:45 p.m.");
+  assert.equal(Math.round(ca.cure), 680);
+  assert.deepEqual(ca.parts.map((p) => p.name), ["San Bernardino", "Riverside"], "counties without a county file are left out");
+
+  const nc = r["house-NC-3"].left;
+  assert.equal(nc.kind, "provisional");
+  assert.equal(Math.round(nc.est), 827, "Duplin 157 × 100% + Pitt 1,116 × 60%");
+  assert.match(nc.note, /Couldn't read 7 of the 9 counties/);
+  assert.equal(votes.parseNCProvisionals(board.states.ncProv)["NEW HANOVER"], 1036);
+  assert.equal(votes.parseNCProvisionals(board.states.ncProv).STATEWIDE, undefined);
+
+  // What the trailing candidate needs, and the margin if the rest split like the votes so far
+  const p = r["house-CA-23"].projection;
+  assert.equal(p.basis, "so far");
+  assert.equal(p.trailer, "Pat Hodge");
+  assert.equal(+(p.needs * 100).toFixed(1), 53.4, "(57,600 + 3,896) / (2 × 57,600)");
+  assert.equal(p.leader, "Jay Obernolte");
+  assert.equal(Math.round(p.margin), 5370);
+
+  // A source that's down shows as an error for that race only
+  delete board.states.sb;
+  votes.reset();
+  const r2 = byKey(await votes.check(2000));
+  assert.match(r2["house-CA-23"].left.error, /answered 404/);
+  assert.equal(r2["house-CA-23"].projection, null);
+  assert.ok(r2["house-WA-5"].left.est > 0);
+});
+
+test("votes left: the split follows the most recent drops once they add up to enough votes", () => {
+  const votes = require("../api/_votes.js");
+  const h = [{ t: 1, votes: { A: 100, B: 100 } }, { t: 2, votes: { A: 1100, B: 600 } }, { t: 3, votes: { A: 1700, B: 1000 } }];
+  const lean = votes.leanOf([{ name: "A", votes: 1700 }, { name: "B", votes: 1000 }], h);
+  assert.equal(lean.basis, "drops");
+  assert.equal(lean.since, 1, "the last drop alone (1,000 votes) isn't enough, so it reaches back one more");
+  assert.equal(lean.votes, 2500);
+  assert.equal(+lean.shares.A.toFixed(2), 0.64);
+  const few = votes.leanOf([{ name: "A", votes: 1700 }, { name: "B", votes: 1000 }], h.slice(1));
+  assert.equal(few.basis, "so far", "not enough drop votes yet");
+  const p = votes.project([{ name: "A", votes: 1700 }, { name: "B", votes: 1000 }], h, { est: 100 });
+  assert.ok(p.needs > 1, "B can't make up 700 votes out of 100");
+});
+
+test("Vote Drops page: each card shows the votes left, what the trailing candidate needs, and the projected margin", async (t) => {
+  const board = defaultBoard(); board.states = full();
+  const pg = loadPage({ file: "votes.html", board });
+  t.after(() => pg.close());
+  withPdfStub(t);
+  const card = (k) => pg.d.querySelector(`.race[data-key="${k}"]`);
+  await waitFor(() => card("house-CA-23")?.querySelector(".left"), { what: "estimates", timeout: 15000 });
+  const ca = card("house-CA-23").querySelector(".left").textContent.replace(/\s+/g, " ");
+  assert.match(ca, /Votes left to count \(est\.\)\s*~57,600/);
+  assert.match(ca, /Hodge needs\s*53\.4% of them/);
+  assert.match(ca, /If they split like the votes so far\s*Obernolte \+5,400/);
+  assert.match(ca, /San Bernardino\s*160,000\s*34%\s*54,400/);
+  assert.match(ca, /About 680 more are waiting on voters to fix a signature/);
+  const nc = card("house-NC-3").querySelector(".left").textContent.replace(/\s+/g, " ");
+  assert.match(nc, /Provisional ballots left \(est\.\)\s*~830/);
+  assert.match(nc, /and all count/);
+  assert.match(card("house-WA-5").querySelector(".left").textContent, /Conroy can.t catch up\s*would need more than all of them/, "4,826 behind with ~3,350 left");
+  assert.ok(!card("house-AZ-2").querySelector(".left"), "no estimate where there's no feed");
+  assert.deepEqual(pg.errors, []);
+});

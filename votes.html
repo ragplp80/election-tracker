@@ -72,6 +72,19 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 .mkt b{color:var(--fg)}
 .mkt a{font-weight:700;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px}
 .drops{margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+.left{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--surface2);display:grid;gap:5px;font-size:13px}
+.left .lrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.left .lrow>span{color:var(--muted)}
+.left .lrow b{font-weight:800;text-align:right;white-space:nowrap}
+.left .big{font-size:16px}
+.left details{font-size:12px;color:var(--muted);margin-top:2px}
+.left summary{cursor:pointer;font-weight:600;color:var(--muted)}
+.left table{width:100%;border-collapse:collapse;margin:6px 0 4px;font-variant-numeric:tabular-nums}
+.left td,.left th{padding:2px 0;text-align:right;font-weight:500}
+.left th{color:var(--faint);font-weight:600;font-size:11px}
+.left td:first-child,.left th:first-child{text-align:left}
+.left p{margin:4px 0}
+.left .err{font-size:12.5px}
 .drops h3{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .dr{display:grid;grid-template-columns:62px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px dashed var(--line);font-size:12.5px}
 .dr:first-of-type{border-top:0}
@@ -102,7 +115,7 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 
 <section class="grid" id="grid" style="margin-top:12px"></section>
 
-<div class="foot">Counts come straight from each state's published results (North Carolina State Board of Elections, California Secretary of State, Washington Secretary of State), checked about every minute while this page is open and every 10 minutes otherwise. A "drop" is any update that changed a race's totals; the record starts from when this page first read each state. Margin is between the top two candidates. Market odds are shown for comparison.</div>
+<div class="foot">Counts come straight from each state's published results (North Carolina State Board of Elections, California Secretary of State, Washington Secretary of State), checked about every minute while this page is open and every 10 minutes otherwise. A "drop" is any update that changed a race's totals; the record starts from when this page first read each state. Margin is between the top two candidates. Votes left are estimates built from each county's own count of uncounted ballots (in North Carolina, the provisional ballots cast); the projection assumes they split like the recent drops, or like the votes so far when there haven't been enough drops. Market odds are shown for comparison.</div>
 
 <script src="core.js"></script>
 <script>
@@ -162,12 +175,35 @@ function raceCard(r){
     <div class="lead"><span class="m ${a.party||"O"} num">${esc(surname(a.name))} +${n0(margin)}</span><span class="sub num">${pts.toFixed(1)} points · ${n0(r.total)} votes counted</span></div>
     <div class="bar">${r.cands.map(c=>`<i style="width:${r.total?c.votes/r.total*100:0}%;background:${colorOf(c.party)}"></i>`).join("")}</div>
     <div class="cands num">${r.cands.map(c=>`<div><span class="${c.party||"O"}">${esc(c.name)}${c.party?` (${c.party})`:""}</span><span>${n0(c.votes)} · ${r.total?(c.votes/r.total*100).toFixed(1):"0.0"}%</span></div>`).join("")}</div>
+    ${leftBox(r)}
     ${marketRow(r)}
     <div class="drops"><h3>Vote drops${drops.length?` · ${drops.length}`:""}</h3>
       ${drops.length?show.map(d=>`<div class="dr${d.t>seenAt?" new":""}"><time class="num">${day(d.t)!==day(clockNow())?day(d.t)+" ":""}${tm(d.t)}</time><span>${dropLine(r,d)}</span></div>`).join("")
         +(drops.length>4?`<button class="more" data-more="${esc(r.key)}">${openAll.has(r.key)?"Show fewer":`Show all ${drops.length}`}</button>`:"")
         :`<div class="none">No new votes since ${r.history?.[0]?tm(r.history[0].t):"this page started watching"}. Drops show up here as the state posts them.</div>`}
     </div></div>`;
+}
+// Ballots still to count (the states' own estimates, by county) and what they could do to the margin
+const approx=v=>v>=1000?n0(Math.round(v/100)*100):v>=100?n0(Math.round(v/10)*10):n0(v);
+function leftBox(r){
+  const L=r.left;if(!L)return"";
+  if(L.error)return`<div class="left"><span class="err">Couldn't estimate the ballots left right now (${esc(L.error)}).</span></div>`;
+  const prov=L.kind==="provisional",P=r.projection,nm=n=>esc(surname(n)),party=n=>(r.parties&&r.parties[n])||"O";
+  let rows=`<div class="lrow"><span>${prov?"Provisional ballots left (est.)":"Votes left to count (est.)"}</span><b class="big num">${L.est>0?"~"+approx(L.est):"None"}</b></div>`;
+  if(P){
+    const need=P.needs;
+    rows+=need==null?"":need>1?`<div class="lrow"><span>${nm(P.trailer)} can't catch up</span><b>would need more than all of them</b></div>`
+      :`<div class="lrow"><span>${nm(P.trailer)} needs</span><b class="num ${party(P.trailer)}">${(need*100).toFixed(1)}% of them</b></div>`;
+    const basis=P.basis==="drops"?`the drops since ${tm(P.since)}`:"the votes so far";
+    rows+=`<div class="lrow"><span>If they split like ${basis}${prov?" and all count":""}</span><b class="num ${party(P.leader)}">${nm(P.leader)} +${approx(P.margin)}</b></div>`;
+  }
+  const parts=(L.parts||[]).filter(p=>p.est>0||p.left);
+  const table=parts.length?`<table><tr><th>County</th><th>${prov?"Provisionals":"Ballots left"}</th><th>District share</th><th>Est. votes</th></tr>${parts.map(p=>
+    `<tr><td>${esc(p.name)}</td><td>${p.left!=null?n0(p.left):"–"}</td><td>${p.share!=null?Math.round(p.share*100)+"%":"–"}</td><td>${approx(p.est)}</td></tr>`).join("")}</table>`:"";
+  const src=(()=>{try{return new URL(L.source).hostname.replace(/^www\./,"")}catch(e){return"source"}})();
+  return`<div class="left">${rows}<details><summary>How this is estimated</summary>${table}
+    <p>The ballots left in each county, times the district's share of the votes counted there.${L.note?" "+esc(L.note)+".":""}${L.cure?` About ${approx(L.cure)} more are waiting on voters to fix a signature.`:""}</p>
+    <p>${L.asOf?`County estimate as of ${esc(/\d{4}-\d\d-\d\dT/.test(L.asOf)?new Date(L.asOf).toLocaleString([], {weekday:"short",hour:"numeric",minute:"2-digit"}):L.asOf)} · `:""}${L.stale?"Couldn't refresh just now; showing the last estimate · ":""}<a href="${esc(L.source)}" target="_blank" rel="noopener">${esc(src)} ↗</a></p></details></div>`;
 }
 function marketRow(r){
   const o=odds.get(r.key);if(!o)return"";

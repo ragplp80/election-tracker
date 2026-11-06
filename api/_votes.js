@@ -1,5 +1,6 @@
 // Vote counts for the last uncalled races, read from each state's own published results, and a
-// running record of every "vote drop" (each time a race's totals change).
+// running record of every "vote drop" (each time a race's totals change). For the races where the
+// states publish it, also an estimate of the ballots still to count and what they'd do to the margin.
 //
 // Each state publishes differently, so each has a small reader that turns its file into the same
 // shape: { cands: [{ name, party, votes }], total, reporting, asOf, url }.
@@ -10,9 +11,14 @@ const ELECTION = { nc: "20261103", wa: "20261103" };
 // The races to follow. src: which state reader; null = no free feed the server can read (yet).
 const RACES = [
   { key: "house-NC-3", label: "NC-3", state: "NC", src: "nc", contest: /^US HOUSE OF REPRESENTATIVES DISTRICT 03\b/i,
-    site: "https://er.ncsbe.gov/?election_dt=11/03/2026" },
+    site: "https://er.ncsbe.gov/?election_dt=11/03/2026",
+    // State Board county numbers (alphabetical) of the counties the district touches
+    counties: { 31: "Duplin", 40: "Greene", 52: "Jones", 54: "Lenoir", 67: "Onslow", 74: "Pitt", 82: "Sampson", 96: "Wayne", 98: "Wilson" } },
   { key: "house-CA-23", label: "CA-23", state: "CA", src: "ca", path: "us-rep/district/23",
-    site: "https://electionresults.sos.ca.gov/returns/us-rep/district/23" },
+    site: "https://electionresults.sos.ca.gov/returns/us-rep/district/23",
+    // The county that publishes its uncounted ballots, and the district's other counties (SoS slugs)
+    leftCounty: { slug: "san-bernardino", name: "San Bernardino", page: "https://elections.sbcounty.gov/elections/2026/1103/" },
+    otherCounties: { riverside: "Riverside", "los-angeles": "Los Angeles", kern: "Kern" } },
   { key: "house-WA-5", label: "WA-5", state: "WA", src: "wa", contest: /^Congressional District 5 - /i,
     site: "https://results.votewa.gov/results/public/washington" },
   { key: "house-AZ-2", label: "AZ-2", state: "AZ", src: null, why: "Arizona's results site blocks automated readers",
@@ -29,16 +35,29 @@ const RACES = [
 
 const num = (v) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return Number.isFinite(n) ? n : 0; };
 const partyOf = (s) => { const t = String(s || "").toUpperCase(); return /DEM/.test(t) ? "D" : /REP/.test(t) ? "R" : t ? "O" : ""; };
+const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 async function getText(url) {
-  const r = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (vote-drop tracker)", accept: "*/*" } });
+  const r = await fetch(url, { headers: { "user-agent": UA, accept: "*/*" } });
   if (!r.ok) throw new Error(`${new URL(url).hostname} answered ${r.status}`);
   return r.text();
+}
+async function getBytes(url) {
+  const r = await fetch(url, { headers: { "user-agent": UA, accept: "*/*" } });
+  if (!r.ok) throw new Error(`${new URL(url).hostname} answered ${r.status}`);
+  return Buffer.from(await r.arrayBuffer());
+}
+// The text of a PDF (replaced in tests)
+async function pdfText(buf) {
+  const { extractText, getDocumentProxy } = await import("unpdf");
+  const { text } = await extractText(await getDocumentProxy(new Uint8Array(buf)), { mergePages: true });
+  return text;
 }
 
 // North Carolina: one file with every contest, one line per candidate (cnm contest, bnm name,
 // pty party, vct votes, prt/ptl precincts reporting/total)
+const ncFile = (county) => `https://er.ncsbe.gov/enr/${ELECTION.nc}/data/results_${county}.txt`;
 async function readNC(races) {
-  const url = `https://er.ncsbe.gov/enr/${ELECTION.nc}/data/results_0.txt`;
+  const url = ncFile(0);
   const rows = JSON.parse(await getText(url));
   const out = {};
   for (const race of races) {
@@ -65,23 +84,172 @@ async function readCA(races) {
   return out;
 }
 // Washington: every contest in one JSON (ballot items with ballot options and vote counts)
+const WA_API = `https://results.votewa.gov/results/public/api/elections/washington/${ELECTION.wa}`;
+const waName = (x) => (x && x[0] && x[0].text) || "";
 async function readWA(races) {
-  const url = `https://results.votewa.gov/results/public/api/elections/washington/${ELECTION.wa}/ballot-items`;
+  const url = `${WA_API}/ballot-items`;
   const items = JSON.parse(await getText(url)).data || [];
-  const name = (x) => (x && x[0] && x[0].text) || "";
   const out = {};
   for (const race of races) {
-    const it = items.find((x) => race.contest.test(name(x.name)));
+    const it = items.find((x) => race.contest.test(waName(x.name)));
     if (!it) { out[race.key] = { error: "contest not found in the state's file" }; continue; }
     const rs = it.reportingStatus || {};
     out[race.key] = {
-      cands: (it.summaryResults?.ballotOptions || []).filter((o) => !o.isWriteIn).map((o) => ({ name: name(o.name), party: partyOf(o.party?.abbreviation), votes: num(o.voteCount) })),
-      reporting: rs.totalUnits ? `${rs.reportingUnits} of ${rs.totalUnits} counties` : "", asOf: rs.asOf || null, url,
+      cands: (it.summaryResults?.ballotOptions || []).filter((o) => !o.isWriteIn).map((o) => ({ name: waName(o.name), party: partyOf(o.party?.abbreviation), votes: num(o.voteCount) })),
+      reporting: rs.totalUnits ? `${rs.reportingUnits} of ${rs.totalUnits} counties` : "", asOf: rs.asOf || null, url, itemId: it.id,
     };
   }
   return out;
 }
 const READERS = { nc: readNC, ca: readCA, wa: readWA };
+
+// ---------- Ballots left to count ----------
+// None of the states publish this by district, so each estimate takes the ballots left in each
+// county the district touches and keeps the district's share of them: the district's votes in that
+// county divided by all ballots counted there so far. Each returns
+// { est, kind, parts: [{ name, left, share, est, asOf }], asOf, source, note }.
+
+// Washington: the results file for one contest has, for every county, the ballots counted so far,
+// the county's own estimate of ballots left, and the contest's votes there.
+async function leftWA(race, cur) {
+  if (!cur.itemId) throw new Error("no contest id");
+  const source = `${WA_API}/data/ballot-item/${cur.itemId}`;
+  const j = JSON.parse(await getText(source));
+  const id = (s) => String(s || "").toLowerCase();
+  const counted = Object.fromEntries((j.localityElections || []).map((l) => [id(l.jurisdictionId), num(l.ballotsCast)]));
+  const stat = (j.statistics || []).find((s) => /left to count/i.test(waName(s.name)));
+  const left = {};
+  for (const g of stat?.groups || []) for (const c of g.children || []) left[id(c.id)] = { n: num(c.value), at: c.lastUpdated || null };
+  const parts = (j.ballotItemWithBreakdown?.breakdownResults || []).map((b) => {
+    const k = id(b.locality?.id), cast = counted[k], l = left[k];
+    const share = cast > 0 ? Math.min(1, num(b.voteTotal) / cast) : 0;
+    return { name: waName(b.locality?.name).replace(/ County$/, ""), left: l ? l.n : null, share, est: l ? l.n * share : 0, asOf: l?.at || null };
+  });
+  if (!parts.length) throw new Error("no county breakdown");
+  const known = parts.filter((p) => p.left != null);
+  return { est: known.reduce((s, p) => s + p.est, 0), kind: "uncounted", parts,
+    asOf: known.map((p) => p.asOf).filter(Boolean).sort().pop() || null, source,
+    note: parts.length > known.length ? (parts.length - known.length === 1 ? "1 county hasn't posted an estimate" : `${parts.length - known.length} counties haven't posted an estimate`) : null };
+}
+
+// California: San Bernardino County (nearly all of CA-23) posts an unprocessed-ballots table on its
+// election page. The district's other counties are estimated at San Bernardino's rate.
+function parseSBTable(html) {
+  const cell = (label) => {
+    const m = html.match(new RegExp(label + "[^<]*</td>\\s*<td[^>]*>([^<]*)</td>", "i"));
+    return m ? num(m[1]) : null;
+  };
+  const at = html.match(/unprocessed ballot reporting as of ([^<]+?)\s*</i);
+  return { processed: cell("Cumulative total number of processed ballots"), left: cell("TOTAL ESTIMATED NUMBER OF UNPROCESSED BALLOTS"),
+    cure: cell("Ballots left to cure"), asOf: at ? at[1].trim() : null };
+}
+async function leftCA(race) {
+  const lc = race.leftCounty;
+  const t = parseSBTable(await getText(lc.page));
+  if (t.left == null || !t.processed) throw new Error(`couldn't read ${lc.name} County's table`);
+  const countyVotes = async (slug) => {
+    const j = JSON.parse(await getText(`https://api.sos.ca.gov/returns/${race.path}/county/${slug}`));
+    const first = Array.isArray(j) ? j[0] : j;
+    return (first?.candidates || []).reduce((s, c) => s + num(c.Votes), 0);
+  };
+  const share = Math.min(1, (await countyVotes(lc.slug)) / t.processed);
+  const rate = t.left / t.processed;   // ballots left per ballot counted in San Bernardino
+  const parts = [{ name: lc.name, left: t.left, share, est: t.left * share, asOf: t.asOf }];
+  for (const [slug, name] of Object.entries(race.otherCounties || {})) {
+    try { const v = await countyVotes(slug); parts.push({ name, left: null, share: null, est: v * rate, asOf: null, assumed: true }); }
+    catch (e) { /* a county we can't read just isn't added */ }
+  }
+  return { est: parts.reduce((s, p) => s + p.est, 0), kind: "uncounted", parts, asOf: t.asOf, source: lc.page,
+    cure: t.cure != null ? t.cure * share : null,
+    note: `Other counties estimated at ${lc.name}'s rate` };
+}
+
+// North Carolina: every precinct is in and mail ballots were due on Election Day, so what's left is
+// mostly provisional ballots. The State Board posts how many were cast in each county (a PDF); each
+// county's share comes from its own results file (the district's votes there vs. the U.S. Senate race,
+// which every voter in the county had on the ballot).
+const NC_PROVISIONALS = "https://s3.amazonaws.com/dl.ncsbe.gov/Legal/Provisionals%20Cast%20Reports/2026_November_Provisionals_Cast_By_Voting_Method.pdf";
+function parseNCProvisionals(text) {
+  const out = {};
+  // "PITT 1,002 114 0 0 1,116": county, then four counts and the total
+  for (const m of String(text).matchAll(/([A-Z][A-Z .']*?)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)(?=\s|$)/g)) {
+    out[m[1].trim().toUpperCase()] = num(m[6]);
+  }
+  return out;
+}
+async function leftNC(race) {
+  const prov = parseNCProvisionals(await exportsRef.pdfText(await getBytes(NC_PROVISIONALS)));
+  if (!Object.keys(prov).length) throw new Error("couldn't read the provisional ballot report");
+  const parts = await Promise.all(Object.entries(race.counties).map(async ([id, name]) => {
+    const left = prov[name.toUpperCase()];
+    try {
+      const rows = JSON.parse(await getText(ncFile(id)));
+      const sum = (re) => rows.filter((r) => re.test(r.cnm || "")).reduce((s, r) => s + num(r.vct), 0);
+      const district = sum(race.contest), county = sum(/^US SENATE\b/i);
+      const share = county > 0 ? Math.min(1, district / county) : 0;
+      return { name, left: left ?? null, share, est: (left || 0) * share, asOf: null };
+    } catch (e) { return { name, left: left ?? null, share: null, est: 0, asOf: null, error: String(e.message || e) }; }
+  }));
+  const missed = parts.filter((p) => p.error).length;
+  return { est: parts.reduce((s, p) => s + p.est, 0), kind: "provisional", parts, asOf: null, source: NC_PROVISIONALS,
+    note: "Provisional ballots; each county decides at its canvass which ones count, and many won't"
+      + (missed ? `. Couldn't read ${missed} of the ${parts.length} counties, so they're left out` : "") };
+}
+const LEFT = { nc: leftNC, ca: leftCA, wa: leftWA };
+
+// The estimates change slowly (counties update them a few times a day), so they're kept for 5 minutes.
+const LEFT_KEY = "votes-left-v1", LEFT_TTL = 5 * 60e3;
+let leftMem = null;
+async function ballotsLeft(results, now) {
+  if (!leftMem) { try { leftMem = (await runtimeCache()?.get(LEFT_KEY)) || null; } catch (e) {} }
+  const kept = (leftMem && leftMem.byKey) || {};
+  const fresh = leftMem && now - leftMem.t < LEFT_TTL;
+  if (fresh) return kept;
+  const byKey = {};
+  await Promise.all(RACES.filter((r) => r.src && LEFT[r.src]).map(async (r) => {
+    const cur = results[r.key];
+    if (!cur || cur.error) { if (kept[r.key]) byKey[r.key] = kept[r.key]; return; }
+    try { byKey[r.key] = await LEFT[r.src](r, cur); }
+    catch (e) { byKey[r.key] = kept[r.key] && !kept[r.key].error ? { ...kept[r.key], stale: true } : { error: String(e.message || e) }; }
+  }));
+  leftMem = { t: now, byKey };
+  try { await runtimeCache()?.set(LEFT_KEY, leftMem, { ttl: 3600, name: "ballots left" }); } catch (e) {}
+  return byKey;
+}
+
+// ---------- Projection ----------
+// How the ballots left might split: like the recent drops if there have been enough of them,
+// otherwise like the votes counted so far.
+const LEAN_MIN = 2000;
+function leanOf(cands, history) {
+  const shares = (v) => { const t = Object.values(v).reduce((s, x) => s + Math.max(0, x), 0); return t > 0 ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, Math.max(0, x) / t])) : null; };
+  const h = history || [];
+  if (h.length >= 2) {
+    // Walk back from the newest drop until the drops add up to enough votes
+    const last = h[h.length - 1].votes;
+    for (let i = h.length - 2; i >= 0; i--) {
+      const gain = Object.fromEntries(Object.keys(last).map((k) => [k, (last[k] || 0) - (h[i].votes[k] || 0)]));
+      const added = Object.values(gain).reduce((s, x) => s + x, 0);
+      if (added >= LEAN_MIN) return { basis: "drops", since: h[i].t, votes: added, shares: shares(gain) };
+    }
+  }
+  return { basis: "so far", votes: cands.reduce((s, c) => s + c.votes, 0), shares: shares(Object.fromEntries(cands.map((c) => [c.name, c.votes]))) };
+}
+function project(cands, history, left) {
+  if (!cands || cands.length < 2 || !left || !(left.est > 0)) return null;
+  const lean = leanOf(cands, history);
+  if (!lean.shares) return null;
+  const final = Object.fromEntries(cands.map((c) => [c.name, c.votes + left.est * (lean.shares[c.name] || 0)]));
+  const order = Object.keys(final).sort((a, b) => final[b] - final[a]);
+  // What the candidate who is behind now needs from the ballots left (of the votes for the top two)
+  const [a, b] = cands, margin = a.votes - b.votes;
+  const twoWay = cands.reduce((s, c) => s + c.votes, 0) ? (a.votes + b.votes) / cands.reduce((s, c) => s + c.votes, 0) : 1;
+  const pool = left.est * twoWay;
+  const needs = pool > 0 ? (pool + margin) / (2 * pool) : null;
+  return { basis: lean.basis, since: lean.since || null, basisVotes: lean.votes, shares: lean.shares,
+    final, leader: order[0], runnerUp: order[1], margin: final[order[0]] - final[order[1]],
+    trailer: b.name, needs };
+}
 
 // ---------- The record of drops ----------
 const KEY = "votes-v1", KEEP = 300;
@@ -120,16 +288,20 @@ async function check(now = Date.now()) {
     }
   }
   if (changed) await save(store);
+  const lefts = await ballotsLeft(results, now);
   return RACES.map((r) => {
     const cur = results[r.key] || null;
     const cands = cur?.cands ? [...cur.cands].sort((a, b) => b.votes - a.votes) : null;
+    const history = store[r.key] || [];
+    const left = lefts[r.key] || null;
     return { key: r.key, label: r.label, state: r.state, site: r.site, supported: !!r.src, why: r.why || null,
       error: cur?.error || null, cands, total: cands ? cands.reduce((s, c) => s + c.votes, 0) : null,
       reporting: cur?.reporting || null, asOf: cur?.asOf || null, source: cur?.url || null,
       parties: cands ? Object.fromEntries(cands.map((c) => [c.name, c.party])) : null,
-      history: store[r.key] || [] };
+      left, projection: left && !left.error ? project(cands, history, left) : null,
+      history };
   });
 }
-function reset() { mem = null; }
+function reset() { mem = null; leftMem = null; }
 
-module.exports = { RACES, check, reset, readNC, readCA, readWA };
+const exportsRef = module.exports = { RACES, check, reset, readNC, readCA, readWA, pdfText, leanOf, project, parseSBTable, parseNCProvisionals };
