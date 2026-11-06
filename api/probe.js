@@ -1,5 +1,5 @@
 // Temporary (preview branch only): look at state election-results files
-const OK = /(ncsbe\.gov|sos\.ca\.gov|vote\.wa\.gov|arizona\.vote|azsos\.gov|alaska\.gov|amazonaws\.com|votewa\.gov|maricopa\.gov|clarityelections\.com)$/;
+const OK = /(ncsbe\.gov|sos\.ca\.gov|vote\.wa\.gov|arizona\.vote|azsos\.gov|alaska\.gov|amazonaws\.com|votewa\.gov|maricopa\.gov|clarityelections\.com|sbcounty\.gov|lavote\.gov|kernvote\.com|rivco\.org|voteinfo\.net)$/;
 module.exports = async (req, res) => {
   const u = String(req.query.u || ""); const n = +req.query.n || 3000;
   let host = ""; try { host = new URL(u).hostname; } catch (e) {}
