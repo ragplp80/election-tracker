@@ -208,7 +208,7 @@ async function leftNC(race) {
 const LEFT = { nc: leftNC, ca: leftCA, wa: leftWA };
 
 // The estimates change slowly (counties update them a few times a day), so they're kept for 5 minutes.
-const LEFT_KEY = "votes-left-v1", LEFT_TTL = 5 * 60e3;
+const LEFT_KEY = "votes-left-v2", LEFT_TTL = 5 * 60e3;
 let leftMem = null;
 async function ballotsLeft(results, now) {
   if (!leftMem) { try { leftMem = (await runtimeCache()?.get(LEFT_KEY)) || null; } catch (e) {} }
