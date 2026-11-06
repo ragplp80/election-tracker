@@ -107,6 +107,7 @@ function useFakeKalshi(board, log) {
   require("../api/_lib.js").resetCatalogCache();   // each test starts with no kept race list
   require("../api/history.js").reset();            // ...and no stored price history
   require("../api/_trends.js").reset();             // ...or trend history
+  require("../api/_votes.js").reset();              // ...or vote-drop record
   const handle = fakeKalshi(board, log);
   const realFetch = global.fetch;
   global.fetch = async (url, opts) => {
@@ -117,6 +118,13 @@ function useFakeKalshi(board, log) {
       const body = board.news ? board.news(new URL(u).searchParams.get("q")) : "<rss><channel></channel></rss>";
       return { ok: true, status: 200, headers: { get: () => null }, text: async () => body };
     }
+    // Fake state results sites: board.states = { nc: rows, ca: { path: json }, wa: items }
+    const st = board.states || {};
+    const ok = (body) => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(body) });
+    const no = { ok: false, status: 404, headers: { get: () => null }, text: async () => "" };
+    if (u.startsWith("https://er.ncsbe.gov/")) { log.push("STATE nc"); return st.nc ? ok(st.nc) : no; }
+    if (u.startsWith("https://api.sos.ca.gov/returns/")) { const k = u.slice("https://api.sos.ca.gov/returns/".length); log.push("STATE ca " + k); return st.ca && st.ca[k] ? ok(st.ca[k]) : no; }
+    if (u.startsWith("https://results.votewa.gov/")) { log.push("STATE wa"); return st.wa ? ok({ data: st.wa }) : no; }
     return realFetch(url, opts);
   };
   return () => { global.fetch = realFetch; };
@@ -166,6 +174,11 @@ function loadPage(opts = {}) {
       log.push("PAGE /api/history " + new URL("http://x" + u).searchParams.get("ticker"));
       if (opts.history === "fail") return resp(502, { error: "down" });
       const r = await callHandler(require(path.join(ROOT, "api/history.js")), Object.fromEntries(new URL("http://x" + u).searchParams));
+      return resp(r.statusCode, r.body);
+    }
+    if (u.startsWith("/api/votes")) {
+      log.push("PAGE /api/votes");
+      const r = await callHandler(require(path.join(ROOT, "api/votes.js")));
       return resp(r.statusCode, r.body);
     }
     if (u.startsWith("/api/news?")) {
