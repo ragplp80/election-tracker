@@ -381,14 +381,7 @@ async function handler(req, res) {
   });
 }
 
+// The key check, request signing, key loading and parlay legs are tested through the handler itself.
 module.exports = handler;
 module.exports.sideValue = sideValue;
-module.exports.keyMatches = keyMatches;
-module.exports.signRequest = signRequest;
-module.exports.loadPrivateKey = loadPrivateKey;
-module.exports.mergePositions = mergePositions;
-module.exports.groupOf = groupOf;
-module.exports.legRace = legRace;
-module.exports.buildLegs = buildLegs;
-module.exports.kalshiUrl = kalshiUrl;
 module.exports.oppositeAsk = oppositeAsk;

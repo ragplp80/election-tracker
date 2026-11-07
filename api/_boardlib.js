@@ -244,4 +244,4 @@ async function nightHistory(rows, markets, legMarkets, rangeKey, getHistory, poo
   };
 }
 
-module.exports = { yesPrice, stateOf, sellNow, feeFor, ladderPrice, nonIncreasing, crossing, buildLine, counterpartEvent, nightHistory, onTimeline, RANGES };
+module.exports = { yesPrice, stateOf, sellNow, nonIncreasing, crossing, buildLine, counterpartEvent, nightHistory, RANGES };

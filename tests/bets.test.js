@@ -295,8 +295,8 @@ test("bets: hedge helper waits with 3+ legs open, and stands down once a leg has
 });
 
 test("bets: Kalshi links and hedge prices come from the market data", () => {
-  assert.equal(bets.kalshiUrl("CONTROLS-2026"), "https://kalshi.com/markets/controls/m/controls-2026");
-  assert.equal(bets.kalshiUrl("KXMIDTERMMOV-MSSENR"), "https://kalshi.com/markets/kxmidtermmov/midterm-margin-of-victory/kxmidtermmov-mssenr");
+  assert.equal(require("../core.js").kalshiUrl("CONTROLS-2026"), "https://kalshi.com/markets/controls/m/controls-2026");
+  assert.equal(require("../core.js").kalshiUrl("KXMIDTERMMOV-MSSENR"), "https://kalshi.com/markets/kxmidtermmov/midterm-margin-of-victory/kxmidtermmov-mssenr");
   assert.equal(bets.oppositeAsk({ no_ask_dollars: "0.3000" }, "yes"), 0.3);
   assert.equal(bets.oppositeAsk({ yes_ask_dollars: "0.2500" }, "no"), 0.25);
   assert.equal(bets.oppositeAsk({ yes_bid_dollars: "0.7000", no_ask_dollars: "1.0000" }, "yes"), 0.3, "falls back to 1 - bid when no ask");

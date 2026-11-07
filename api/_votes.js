@@ -308,4 +308,4 @@ async function check(now = Date.now()) {
 }
 function reset() { mem = null; leftMem = null; }
 
-const exportsRef = module.exports = { RACES, check, reset, readNC, readCA, readWA, pdfText, project, parseSBTable, parseNCProvisionals };
+const exportsRef = module.exports = { RACES, check, reset, pdfText, project, parseNCProvisionals };
