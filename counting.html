@@ -137,10 +137,7 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 const TOSS=0.75,SAFE=0.97,BADGE_MS=10*60e3,REFRESH_MS=30e3;
 const SIX=Date.parse("2026-11-03T23:00:00Z");             // 6pm ET election night
 const SEN_NOT_UP={D:34,R:31};
-const $=id=>document.getElementById(id);
-const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.now();
-const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const {$,esc,clockNow,store}=Core.ui;
 const pct=p=>Math.round(p*100)+"%";
 const tm=t=>new Date(t).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
 

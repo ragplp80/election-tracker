@@ -121,10 +121,7 @@ h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.14em;text-trans
 <script>
 "use strict";
 const REFRESH_MS=60e3;
-const $=id=>document.getElementById(id);
-const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.now();
-const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const {$,esc,clockNow,store}=Core.ui;
 const n0=v=>Math.round(v).toLocaleString("en-US");
 const tm=t=>new Date(t).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
 const day=t=>new Date(t).toLocaleDateString([], {weekday:"short"});

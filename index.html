@@ -443,7 +443,7 @@ const onElectionNight=fromHour=>{const d=etDate(),h=etHour();return(d===ELECTION
 
 // ---------- Clock ----------
 // All time-based logic reads this clock, so tests can run the page as if it were election night.
-const clockNow=()=>typeof window.__testNow==="function"?window.__testNow():Date.now();
+const {$,esc,clockNow,store}=Core.ui;
 // Embedded mode (?embed=1&race=ID): another page (How We Looking) shows just this page's race
 // chart in an overlay. Everything else is hidden, and closing the chart tells that page to close.
 const PARAMS=new URLSearchParams(location.search);
@@ -454,10 +454,7 @@ if(EMBED)document.documentElement.classList.add("embed");
 if(VIEW)document.documentElement.classList.add("view-"+VIEW);
 
 // ---------- Small helpers ----------
-const $=id=>document.getElementById(id);
-const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 const num=v=>{const n=parseFloat(v);return Number.isFinite(n)?n:null};
-const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmtPct=p=>p==null?"–":Math.round(p*100)+"%";
 // Moves are labeled by who gained: "D +1.6" or "R +2.2" (or "I +3" toward an independent like Osborn).
 const fmtPts=(d,r)=>{

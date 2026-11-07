@@ -198,8 +198,21 @@
     return `https://kalshi.com/markets/${series}/${KALSHI_SLUGS[series] || "m"}/${ev}`;
   }
 
+  // ---------- Page helpers (browser only: the server never calls these) ----------
+  const ui = {
+    $: (id) => document.getElementById(id),
+    esc: (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])),
+    // Every page reads time through this, so tests can run a page as if it were election night
+    clockNow: () => (typeof root.__testNow === "function" ? root.__testNow() : Date.now()),
+    // localStorage as JSON; it can be full or blocked (private mode), so nothing here throws. set() says whether it saved.
+    store: {
+      get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+      set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+    },
+  };
+
   const Core = { STATES, SEATS2026, classify, eventMeta, seatKey, isSeat, eventVolume, is2026, slimMarket, slimEvent, untrackedRace,
-    partyOf, priceOf, dProbOf, raceOdds, parseSeatMarket, seatStats, HELD_SEN, HELD_GOV, kalshiUrl };
+    partyOf, priceOf, dProbOf, raceOdds, parseSeatMarket, seatStats, HELD_SEN, HELD_GOV, kalshiUrl, ui };
   if (typeof module === "object" && module.exports) module.exports = Core;
   else root.Core = Core;
 })(typeof window !== "undefined" ? window : globalThis);
