@@ -35,6 +35,19 @@ test("catalog: refuses to publish a mostly-failed build", async () => {
   try { await assert.rejects(lib.buildCatalog(), /incomplete/); } finally { restore(); }
 });
 
+test("catalog: when Kalshi is down, gives up after one pass instead of retrying every series", async () => {
+  const board = defaultBoard();
+  board.fail = (p) => p === "/events";
+  const log = [];
+  const restore = useFakeKalshi(board, log);
+  try {
+    await assert.rejects(lib.buildCatalog(), /Kalshi looks unavailable/);
+    const series = new Set(log.filter((l) => l.startsWith("/events?")).map((l) => new URLSearchParams(l.split("?")[1]).get("series_ticker")));
+    const calls = log.filter((l) => l.startsWith("/events?")).length;
+    assert.ok(calls <= series.size * 4, `one pass of 4 tries per series (${calls} calls for ${series.size} series)`);
+  } finally { restore(); }
+});
+
 test("prices: batched by ticker when Kalshi supports it", withBoard(defaultBoard(), async (log) => {
   const board = defaultBoard();
   const cat = await lib.buildCatalog();

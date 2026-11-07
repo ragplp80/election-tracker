@@ -52,6 +52,8 @@ async function pool(items, n, fn) {
   return out;
 }
 
+const OUTAGE_SHARE = 0.25;   // more than this share of lookups failing at once = Kalshi is down
+
 // Every 2026 race Kalshi lists, with current markets. About 250 Kalshi calls, so it is cached
 // for an hour and refreshed in the background (see api/catalog.js).
 async function buildCatalog() {
@@ -65,6 +67,12 @@ async function buildCatalog() {
     return { ...c, events: events.filter((ev) => Core.is2026(c, ev)) };
   };
   const checked = await pool(cands, 5, look);
+  // When a large share failed even after each lookup's own retries, Kalshi is down rather than
+  // pushing back on a burst. The slow retry passes below would then run past the function's time
+  // limit, so give up now; the last good list keeps being served.
+  const failedFirst = checked.filter((c) => c && c.error).length;
+  if (failedFirst > cands.length * OUTAGE_SHARE)
+    throw new Error(`catalog incomplete: ${failedFirst} of ${cands.length} lookups failed; Kalshi looks unavailable`);
   // Kalshi sometimes pushes back on a burst of requests. Retry those slowly before giving up.
   for (let pass = 0; pass < 2; pass++) {
     const redo = checked.map((c, i) => (c && c.error ? i : -1)).filter((i) => i >= 0);
