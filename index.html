@@ -558,7 +558,12 @@ function loadHistory(){
   if(raw&&raw.v===2){const h={};for(const id in raw.d)h[id]=raw.d[id].map(([m,x])=>[m*60e3,x/1e4]);return h}
   return raw&&typeof raw==="object"?raw:{};   // older format: already [[ms, value]] (tests seed history this way)
 }
+// Saving writes the whole history (up to ~700 points per race) as one string, so the per-refresh
+// save happens at most every 5 minutes; leaving or hiding the page always saves (see below).
+let historySavedAt=0;
+function saveHistorySoon(){if(clockNow()-historySavedAt>=5*60e3)saveHistory()}
 function saveHistory(){
+  historySavedAt=clockNow();
   const pack=keep=>{const d={};for(const id in history){const pts=history[id].filter(keep);if(pts.length)d[id]=pts.map(([t,v])=>[Math.round(t/60e3),Math.round(v*1e4)])}return{v:2,d}};
   const now=clockNow();
   if(store.set("et.history",pack(()=>true)))return true;
@@ -1164,7 +1169,7 @@ async function refresh(){
     }
     // Trim history: every point for 6 hours, one per hour back to 72 hours
     for(const k in history){history[k]=compactHistory(history[k],now);if(!history[k].length)delete history[k]}
-    saveHistory();
+    saveHistorySoon();
     lastOk=new Date(clockNow());lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
     saveSnapshot(result.out,lastMode==="snapshot"?result.seats:null);
     if(!EMBED)store.set("et.lastSeen",now);   // a chart opened from another page isn't a look at this one
@@ -1535,7 +1540,9 @@ async function keepAwake(on){
     else if(!on&&wake){await wake.release();wake=null}
   }catch(e){}
 }
+addEventListener("pagehide",()=>saveHistory());
 document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="hidden"){saveHistory();return}
   if(document.visibilityState==="visible"){
     const before=compareFrom;newVisitCheck();
     if(compareFrom!==before){for(const r of races.values())metrics(r);render();if(!busy)refresh()}

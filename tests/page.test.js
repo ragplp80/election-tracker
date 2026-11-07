@@ -423,3 +423,29 @@ test("TV panels (?embed=1&view=movers / feed): one panel, sorted by movers over 
   assert.ok(!pg.d.getElementById("sheetBg"), "no chart opens inside the panel");
   assert.deepEqual(JSON.parse(pg.w.localStorage.getItem("et.ui")), saved, "your saved view is left alone");
 });
+
+test("history is written to storage at most every 5 minutes, and always when the page is hidden", async (t) => {
+  let offset = 0;
+  const pg = page(t);
+  pg.w.__testNow = () => Date.now() + offset;
+  await loaded(pg);
+  await waitFor(() => !/filling/.test(pg.text("#updated")), { timeout: 15000, what: "first fill" });
+  const writes = [];
+  const real = pg.w.Storage.prototype.setItem;
+  pg.w.Storage.prototype.setItem = function (k, v) { if (k === "et.history") writes.push(v.length); return real.call(this, k, v); };
+  const refresh = async () => {
+    pg.d.getElementById("refresh").click();
+    await waitFor(() => !/Updating/.test(pg.d.getElementById("refresh").textContent), { what: "refresh" });
+    await new Promise((r) => setTimeout(r, 200));
+  };
+  await refresh();
+  await refresh();
+  assert.equal(writes.length, 0, "refreshes right after a save don't rewrite the history");
+  offset = 6 * 60e3;
+  await refresh();
+  assert.equal(writes.length, 1, "saved again once 5 minutes have passed");
+  Object.defineProperty(pg.d, "visibilityState", { configurable: true, get: () => "hidden" });
+  pg.d.dispatchEvent(new pg.w.Event("visibilitychange"));
+  assert.equal(writes.length, 2, "hiding the page saves right away");
+  noErrors(pg);
+});
