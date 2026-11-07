@@ -48,8 +48,6 @@ h1 small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color
 .switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--fg);transition:transform .2s}
 .toggle[aria-pressed="true"] .switch{background:var(--move)}
 .toggle[aria-pressed="true"] .switch::after{transform:translateX(16px);background:#111}
-.progress{height:2px;background:var(--line);border-radius:1px;overflow:hidden;width:100%;}
-.progress i{display:block;height:100%;width:0;background:var(--move);transition:width .2s}
 /* Phones: the header stays pinned, so keep it to two short lines (title and buttons, then status) */
 @media (max-width:560px){
   header{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:10px 0 8px}
@@ -57,7 +55,6 @@ h1 small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color
   h1{font-size:16px;white-space:nowrap} h1 small{display:none}
   .hctl{grid-column:2;grid-row:1;gap:6px;flex-wrap:nowrap}
   .hstatus{grid-column:1/-1;font-size:11.5px;flex-direction:row;flex-wrap:wrap;column-gap:8px}
-  .progress{grid-column:1/-1}
   .btn{padding:7px 10px} .toggle{padding:5px 7px 5px 9px;gap:6px}
   .toggle .switch{width:32px} .toggle[aria-pressed="true"] .switch::after{transform:translateX(10px)}
   .toggle .lbl-long{display:none}
@@ -327,7 +324,6 @@ footer a{color:var(--muted)}
     <button class="toggle" id="auto" aria-pressed="false" title="Refresh every minute"><span>Auto<span class="lbl-long"> · 1 min</span></span><span class="switch"></span></button>
     <button class="btn primary" id="refresh">Refresh</button>
   </div>
-  <div class="progress"><i id="prog"></i></div>
 </header>
 
 <a class="pagelink" href="looking.html">How we looking: the early-tells scenario tracker <span>→</span></a>
@@ -432,7 +428,7 @@ footer a{color:var(--muted)}
 <script>
 "use strict";
 // ---------- Reference data ----------
-const {STATES,classify,is2026,seatKey,isSeat,eventMeta,dProbOf,parseSeatMarket,seatStats,HELD_SEN,HELD_GOV}=Core;
+const {STATES,is2026,seatKey,dProbOf,parseSeatMarket,seatStats,HELD_SEN,HELD_GOV}=Core;
 // 2024 presidential margin by state, Trump minus Harris, percentage points (rounded).
 const TRUMP24={AL:30.5,AK:13.1,AZ:5.5,AR:30.6,CA:-20.1,CO:-11.0,CT:-14.5,DE:-14.7,FL:13.1,GA:2.2,HI:-23.1,ID:36.5,IL:-10.9,IN:19.0,IA:13.2,KS:16.1,KY:30.5,LA:22.0,ME:-6.9,MD:-28.5,MA:-25.2,MI:1.4,MN:-4.2,MS:22.9,MO:18.4,MT:19.9,NE:20.4,NV:3.1,NH:-2.8,NJ:-5.9,NM:-6.0,NY:-12.6,NC:3.2,ND:36.5,OH:11.2,OK:34.3,OR:-14.3,PA:1.7,RI:-13.8,SC:17.8,SD:29.2,TN:29.7,TX:13.7,UT:21.6,VT:-32.3,VA:-5.8,WA:-18.2,WV:41.9,WI:0.9,WY:45.8};
 // When most of each state's polls close, Eastern time on election night (hours after midnight; 24+ = next day).
@@ -495,37 +491,10 @@ async function kget(path){
   }
   throw new Error("failed");
 }
-async function pool(items,n,fn,onProgress){
-  let i=0,done=0;const out=new Array(items.length);
-  await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{out[k]=await fn(items[k])}catch(e){out[k]={error:String(e)}}done++;onProgress&&onProgress(done,items.length)}}));
+async function pool(items,n,fn){
+  let i=0;const out=new Array(items.length);
+  await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{out[k]=await fn(items[k])}catch(e){out[k]={error:String(e)}}}}));
   return out;
-}
-
-// ---------- Discovering the races ----------
-// Fallback only: used when the server snapshot is unavailable. Series naming lives in core.js.
-async function discover(onProgress){
-  const cached=store.get("et.series2",null);
-  if(cached&&clockNow()-cached.at<6*3600e3&&cached.list.length)return cached.list;
-  const j=await kget("/series?category=Elections");
-  const cands=(j.series||[]).map(s=>({series:s.ticker,...classify(s.ticker)})).filter(s=>s.type&&s.type!=="seats"&&isSeat(s));
-  // Keep only series that have an open event. Prefer the party-style series when a race has two.
-  const look=async c=>{const e=await kget(`/events?series_ticker=${c.series}&status=open`);return{...c,open:(e.events||[]).length}};
-  const checked=await pool(cands,4,look,onProgress);
-  for(let pass=0;pass<2;pass++){   // retry anything Kalshi pushed back on
-    const redo=checked.map((c,i)=>c&&c.error?i:-1).filter(i=>i>=0);if(!redo.length)break;
-    await sleep(1500);const again=await pool(redo.map(i=>cands[i]),2,look);redo.forEach((i,k)=>{checked[i]=again[k]});
-  }
-  const incomplete=checked.some(c=>c&&c.error);
-  const best=new Map();
-  for(const c of checked){
-    if(!c||c.error||!c.open)continue;
-    const key=seatKey(c);
-    const prev=best.get(key);
-    if(!prev||c.pref>prev.pref)best.set(key,c);
-  }
-  const list=[...best.values()].map(({series,type,st,dist,special})=>({series,type,st,dist,special}));
-  if(!incomplete)store.set("et.series2",{at:clockNow(),list});   // don't remember a list with gaps
-  return list;
 }
 
 // ---------- Turning Kalshi events into races ----------
@@ -548,7 +517,7 @@ function buildRace(meta,ev){
 }
 
 // ---------- State ----------
-let series=[],races=new Map(),prevSnap=new Map(),busy=false,lastOk=null,errCount=0;
+let races=new Map(),prevSnap=new Map(),busy=false,lastOk=null,loadErr=null;   // loadErr: why the last refresh failed
 let houseSeats=null; // {buckets:[{lo,hi,mid,p,label,ticker}], id}
 let history=loadHistory();                        // id -> [[ms, value]], oldest first
 // Saved compactly (minutes since 1970, value x 10,000 as a whole number) to stay well under the
@@ -595,7 +564,7 @@ function baseFor(r){
   const v=pointAt(r.id,baseAt(),75);
   return v==null?null:{v,party:sideOf(r,v),p:Math.max(v,1-v)};
 }
-for(const k of ["et.goingIn","et.series","et.batchOK"])try{localStorage.removeItem(k)}catch(e){}   // from older versions
+for(const k of ["et.goingIn","et.series","et.series2","et.batchOK"])try{localStorage.removeItem(k)}catch(e){}   // from older versions
 const ui=store.get("et.ui",{sort:"key",type:"all",compet:false,auto:false});
 // A TV-mode panel always shows every race sorted by movers over the past hour (not saved)
 if(VIEW)Object.assign(ui,{sort:"movers",type:"all",compet:false,win:"1h",feedAll:false});
@@ -1095,27 +1064,20 @@ function render(){
 }
 function renderStatus(){
   const t=lastOk?lastOk.toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"}):"–";
-  if(savedFrom&&!lastOk){$("updated").innerHTML=`Showing saved odds from <b>${new Date(savedFrom).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b> · updating…`;return}
-  let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s${lastMode==="snapshot"?", fast":""})</span>`:""}`;
+  if(savedFrom&&!lastOk){$("updated").innerHTML=`Showing saved odds from <b>${new Date(savedFrom).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b> · `+(loadErr?`<span class="err">Couldn't load the latest odds (${esc(loadErr)}). Trying again shortly.</span>`:"updating…");return}
+  if(!lastOk&&loadErr){$("updated").innerHTML=`<span class="err">Couldn't load the odds (${esc(loadErr)}). Trying again shortly.</span>`;return}
+  let s=`Updated <b>${t}</b>${lastSecs?` <span class="num">(${lastSecs}s)</span>`:""}`;
   if(bf.running)s+=` · filling in trends <span class="num">${bf.done}/${bf.total}</span>`;
-  if(errCount)s+=` · <span class="err">${errCount} race${errCount>1?"s":""} didn't load</span>`;
+  if(loadErr)s+=` · <span class="err">Couldn't load the latest odds (${esc(loadErr)}). Trying again shortly.</span>`;
   if(ui.auto&&nextAt)s+=` · next in <b class="num" id="cd">${Math.max(0,Math.round((nextAt-clockNow())/1000))}s</b>`;
   $("updated").innerHTML=s;
   $("baseline").innerHTML=`Today: since <b>${baseLabel()} ET</b>`;
 }
 
 // ---------- Refresh cycle ----------
-// Fallback when the snapshot is down: ask for each race's events through the relay.
-let lastMode="";
-async function fullSweep(prog){
-  const res=await pool(series,4,async meta=>{const j=await kget(`/events?series_ticker=${meta.series}&with_nested_markets=true`);return{meta,events:j.events||[]}},prog);
-  const out=[];let errs=0;
-  for(const x of res){if(!x||x.error){errs++;continue}for(const ev of x.events){const meta=eventMeta(x.meta,ev);if(meta&&isSeat(meta))out.push({meta,ev})}}
-  return{out,errs};
-}
 // One call for everything: the server keeps a shared copy, refreshed about every 15 seconds.
-// If it fails, the page falls back to asking for each race itself (fullSweep above).
-let snapFailedAt=0,savedFrom=null,coverage=null;   // coverage: what the server's race list found (for ?check)
+// If it fails, the page keeps showing what it has (or the odds saved on this device) and tries again.
+let savedFrom=null,coverage=null;   // coverage: what the server's race list found (for ?check)
 async function snapshotSweep(){
   const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),150000);   // a rebuild of the race list can take a minute or two
   const slow=setTimeout(()=>{if(busy&&$("updated"))$("updated").innerHTML="Rebuilding the race list on the server. The first load after an update can take a minute or two…"},8000);
@@ -1125,7 +1087,7 @@ async function snapshotSweep(){
     const j=await r.json();
     if(!Array.isArray(j.races)||!j.races.length)throw new Error("empty snapshot");
     coverage=j.coverage||null;
-    return{out:j.races,errs:0,seats:j.seats,at:j.at};
+    return{out:j.races,seats:j.seats,at:j.at};
   }finally{clearTimeout(t);clearTimeout(slow)}
 }
 // Save the latest odds on this device so the next visit can show them instantly.
@@ -1145,23 +1107,13 @@ function paintSaved(){
 }
 async function refresh(){
   if(busy)return;busy=true;$("refresh").disabled=true;$("refresh").textContent="Updating…";
-  const prog=(d,n)=>{$("prog").style.width=(d/n*100)+"%"};
   const t0=performance.now();
   try{
-    let result=null;
-    if(clockNow()-snapFailedAt>5*60e3){
-      try{result=await snapshotSweep();lastMode="snapshot";if(result.seats)houseSeats=parseSeatMarket({events:[result.seats]})}
-      catch(e){snapFailedAt=clockNow();result=null}
-    }
-    if(!result&&!series.length){
-      $("loading")&&($("loading").textContent="Loading every Senate, governor and House race…");
-      series=await discover(prog);
-    }
-    if(!result){result=await fullSweep(prog);lastMode="full"}
-    if(lastMode!=="snapshot"){try{houseSeats=parseSeatMarket(await kget("/events?series_ticker=KXDHOUSESEATS&with_nested_markets=true&status=open"))}catch(e){}}
+    const result=await snapshotSweep();
+    if(result.seats)houseSeats=parseSeatMarket({events:[result.seats]});
     // Remember the previous refresh for "Last" moves and lead flips
     for(const r of races.values()){prevSnap.set(r.id,val(r));prevSnap.set(r.id+":leader",r.leader.party+r.leader.name)}
-    errCount=result.errs;const now=clockNow();
+    loadErr=null;const now=clockNow();
     for(const {meta,ev} of result.out){
       const r=buildRace(meta,ev);if(!r)continue;races.set(r.id,r);
       (history[r.id]=history[r.id]||[]).push([now,val(r)]);
@@ -1171,7 +1123,7 @@ async function refresh(){
     for(const k in history){history[k]=compactHistory(history[k],now);if(!history[k].length)delete history[k]}
     saveHistorySoon();
     lastOk=new Date(clockNow());lastSecs=((performance.now()-t0)/1000).toFixed(1);savedFrom=null;
-    saveSnapshot(result.out,lastMode==="snapshot"?result.seats:null);
+    saveSnapshot(result.out,result.seats);
     if(!EMBED)store.set("et.lastSeen",now);   // a chart opened from another page isn't a look at this one
     for(const r of races.values())metrics(r);
     render();
@@ -1179,9 +1131,9 @@ async function refresh(){
     if(detail){renderDetailMeta();if(detail.range==="1h"||detail.range==="6h")loadDetail()}
     if(!bf.running)backfill();   // fill any gaps (e.g. the page sat open without refreshing)
   }catch(e){
-    $("updated").innerHTML=`<span class="err">Couldn't load the latest odds (${esc(e.message)}). Will try again.</span>`;
+    loadErr=e.name==="AbortError"?"the server took too long":e.message;
   }finally{
-    busy=false;$("refresh").disabled=false;$("refresh").textContent="Refresh";$("prog").style.width="0";
+    busy=false;$("refresh").disabled=false;$("refresh").textContent="Refresh";
     schedule();renderStatus();
   }
 }
@@ -1532,7 +1484,12 @@ window.addEventListener("resize",()=>{if(detail?.series)drawChart()});
 
 // ---------- Auto refresh, wake lock, controls ----------
 let timer=null,nextAt=null,wake=null;
-function schedule(){clearTimeout(timer);nextAt=null;if(!ui.auto||EMBED)return;nextAt=clockNow()+60e3;timer=setTimeout(refresh,60e3)}
+// Every minute with auto refresh on; after a failed refresh, again in 30 seconds either way.
+function schedule(){
+  clearTimeout(timer);nextAt=null;
+  const wait=loadErr?30e3:ui.auto&&!EMBED?60e3:0;if(!wait)return;
+  nextAt=clockNow()+wait;timer=setTimeout(refresh,wait);
+}
 setInterval(()=>{const cd=$("cd");if(cd&&nextAt)cd.textContent=Math.max(0,Math.round((nextAt-clockNow())/1000))+"s"},1000);
 async function keepAwake(on){
   try{

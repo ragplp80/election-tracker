@@ -16,7 +16,7 @@ test("loads every race from one snapshot call", async (t) => {
   assert.equal(pg.log.filter((l) => l === "PAGE /api/snapshot").length, 1);
   const pageCalls = pg.log.filter((l) => l.startsWith("PAGE /api/kalshi "));
   assert.ok(pageCalls.every((l) => /candlesticks$/.test(l)), "the page only asks for trend history itself, never for races");
-  assert.match(pg.text("#updated"), /fast/);
+  assert.match(pg.text("#updated"), /Updated/);
   assert.match(pg.text("#ctlS"), /67%/);
   noErrors(pg);
 });
@@ -85,13 +85,25 @@ test("toss-up chip opens the race chart", async (t) => {
   await waitFor(() => !/Loading/.test(pg.text("#chartbox")), { what: "chart loaded" });
 });
 
-test("falls back to per-race loading when the snapshot is down", async (t) => {
+test("when the snapshot is down: says so, keeps the saved odds, and never sweeps Kalshi itself", async (t) => {
+  const first = loadPage();
+  await loaded(first);
+  const saved = JSON.parse(first.w.localStorage.getItem("et.snap"));
+  first.close();
+
+  const pg = page(t, { snapshot: "fail", storage: { "et.snap": saved } });
+  await waitFor(() => /Couldn't load the latest odds/.test(pg.text("#updated")), { what: "error shown" });
+  assert.match(pg.text("#updated"), /HTTP 502.*Trying again/);
+  assert.ok(pg.row("SENATETX-26"), "saved odds stay on screen");
+  assert.ok(!pg.log.some((l) => /^PAGE \/api\/kalshi \/(events|series)/.test(l)), "no race-by-race lookups through the relay");
+  noErrors(pg);
+});
+
+test("when the snapshot is down on a first visit: just the error, no half-filled status", async (t) => {
   const pg = page(t, { snapshot: "fail" });
-  await loaded(pg);
-  assert.ok(pg.log.some((l) => l.startsWith("PAGE /api/kalshi /events")), "used the relay for races");
-  assert.ok(pg.row("SENATETX-26"));
-  assert.ok(!pg.rows().some((r) => r.dataset.id.includes("KY")), "still filters 2027");
-  assert.match(pg.text("#balH"), /DEM/, "House seat market still loads");
+  await waitFor(() => /Couldn't load the odds/.test(pg.text("#updated")), { what: "error shown" });
+  assert.doesNotMatch(pg.text("#updated"), /Updated/);
+  assert.ok(!pg.log.some((l) => /^PAGE \/api\/kalshi \/(events|series)/.test(l)), "no race-by-race lookups through the relay");
   noErrors(pg);
 });
 
@@ -351,14 +363,12 @@ test("a page left open for hours refills its recent history on Refresh", async (
 test("districts from the multi-district series show on the board (NC-3)", async (t) => {
   const board = defaultBoard();
   board.events.KXHOUSERACE = [twoParty("KXHOUSERACE-NC03-26", "Democrat X", "Greg Murphy", 0.2)];
-  for (const snapshot of ["ok", "fail"]) {
-    const pg = page(t, { board, snapshot });
-    await loaded(pg);
-    const row = pg.row("KXHOUSERACE-NC03-26");
-    assert.ok(row, `NC-3 row (${snapshot === "ok" ? "server snapshot" : "page fallback"})`);
-    assert.match(row.textContent, /NC-3/);
-    assert.match(row.textContent, /80% Greg Murphy/);
-  }
+  const pg = page(t, { board });
+  await loaded(pg);
+  const row = pg.row("KXHOUSERACE-NC03-26");
+  assert.ok(row, "NC-3 row");
+  assert.match(row.textContent, /NC-3/);
+  assert.match(row.textContent, /80% Greg Murphy/);
 });
 
 test("embedded chart (?embed=1&race=...): opens that race's chart alone, and closing tells the page behind", async (t) => {
