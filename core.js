@@ -57,7 +57,6 @@
     if (c.type === "house") return `house-${c.st}-${c.dist || 0}`;
     return `${c.type}-${c.st}`;
   }
-  const seriesKey = seatKey;   // older name, same thing
   function isSeat(c) {
     if (c.type === "ctlS" || c.type === "ctlH" || c.type === "seats" || c.type === "houseMulti") return true;
     if (c.type === "senate") return SEATS2026.senate.includes(c.st);
@@ -199,7 +198,7 @@
     return `https://kalshi.com/markets/${series}/${KALSHI_SLUGS[series] || "m"}/${ev}`;
   }
 
-  const Core = { STATES, SEATS2026, classify, eventMeta, seatKey, seriesKey, isSeat, eventVolume, is2026, slimMarket, slimEvent, untrackedRace,
+  const Core = { STATES, SEATS2026, classify, eventMeta, seatKey, isSeat, eventVolume, is2026, slimMarket, slimEvent, untrackedRace,
     partyOf, priceOf, dProbOf, raceOdds, parseSeatMarket, seatStats, HELD_SEN, HELD_GOV, kalshiUrl };
   if (typeof module === "object" && module.exports) module.exports = Core;
   else root.Core = Core;

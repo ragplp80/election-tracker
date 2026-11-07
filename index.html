@@ -432,7 +432,7 @@ footer a{color:var(--muted)}
 <script>
 "use strict";
 // ---------- Reference data ----------
-const {STATES,classify,is2026,seatKey,isSeat,eventMeta,priceOf,dProbOf,parseSeatMarket,seatStats,HELD_SEN,HELD_GOV}=Core;
+const {STATES,classify,is2026,seatKey,isSeat,eventMeta,dProbOf,parseSeatMarket,seatStats,HELD_SEN,HELD_GOV}=Core;
 // 2024 presidential margin by state, Trump minus Harris, percentage points (rounded).
 const TRUMP24={AL:30.5,AK:13.1,AZ:5.5,AR:30.6,CA:-20.1,CO:-11.0,CT:-14.5,DE:-14.7,FL:13.1,GA:2.2,HI:-23.1,ID:36.5,IL:-10.9,IN:19.0,IA:13.2,KS:16.1,KY:30.5,LA:22.0,ME:-6.9,MD:-28.5,MA:-25.2,MI:1.4,MN:-4.2,MS:22.9,MO:18.4,MT:19.9,NE:20.4,NV:3.1,NH:-2.8,NJ:-5.9,NM:-6.0,NY:-12.6,NC:3.2,ND:36.5,OH:11.2,OK:34.3,OR:-14.3,PA:1.7,RI:-13.8,SC:17.8,SD:29.2,TN:29.7,TX:13.7,UT:21.6,VT:-32.3,VA:-5.8,WA:-18.2,WV:41.9,WI:0.9,WY:45.8};
 // When most of each state's polls close, Eastern time on election night (hours after midnight; 24+ = next day).
@@ -475,8 +475,12 @@ const fmtVol=v=>v==null?"–":v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e3?Math.round(v/
 const fmtMargin=m=>m==null?"–":(m>0?"R+":"D+")+Math.abs(m).toFixed(0);
 const fmtClock=h=>{if(h==null)return"–";let hh=Math.floor(h)%24;const mm=Math.round((h%1)*60);const ap=hh>=12?"pm":"am";hh=hh%12||12;return hh+(mm?":"+String(mm).padStart(2,"0"):"")+ap};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const etDate=()=>new Date(clockNow()).toLocaleDateString("en-CA",{timeZone:"America/New_York"});
-const etHour=()=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"numeric",hour12:false}).formatToParts(new Date(clockNow()));const h=+p.find(x=>x.type==="hour").value%24,m=+p.find(x=>x.type==="minute").value;return h+m/60};
+// Eastern-time formatters are built once: creating one costs ~20x more than using it, and these run per race on every render.
+const ET_DATE=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York"}),
+  ET_HM=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"numeric",hour12:false}),
+  ET_H23=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",hourCycle:"h23"});
+const etDate=()=>ET_DATE.format(new Date(clockNow()));
+const etHour=()=>{const p=ET_HM.formatToParts(new Date(clockNow()));const h=+p.find(x=>x.type==="hour").value%24,m=+p.find(x=>x.type==="minute").value;return h+m/60};
 
 async function kget(path){
   for(let i=0;i<2;i++){
@@ -552,7 +556,7 @@ let history=loadHistory();                        // id -> [[ms, value]], oldest
 function loadHistory(){
   const raw=store.get("et.history",{});
   if(raw&&raw.v===2){const h={};for(const id in raw.d)h[id]=raw.d[id].map(([m,x])=>[m*60e3,x/1e4]);return h}
-  return raw&&typeof raw==="object"?raw:{};   // older format: already [[ms, value]]
+  return raw&&typeof raw==="object"?raw:{};   // older format: already [[ms, value]] (tests seed history this way)
 }
 function saveHistory(){
   const pack=keep=>{const d={};for(const id in history){const pts=history[id].filter(keep);if(pts.length)d[id]=pts.map(([t,v])=>[Math.round(t/60e3),Math.round(v*1e4)])}return{v:2,d}};
@@ -568,10 +572,16 @@ function saveHistory(){
 // moment for everyone no matter when the page was opened. On election night it moves to 6pm ET.
 function etTs(dateStr,hour){
   const [y,m,d]=dateStr.split("-").map(Number);let t=Date.UTC(y,m-1,d,hour+4);
-  const h=+new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",hourCycle:"h23"}).format(new Date(t));
+  const h=+ET_H23.format(new Date(t));
   let diff=hour-h;if(diff>12)diff-=24;if(diff<-12)diff+=24;return t+diff*3600e3;
 }
-function baseAt(){return onElectionNight(NIGHT.baseline)?etTs(ELECTION_DAY,NIGHT.baseline):etTs(etDate(),0)}
+// Called for every race on every render, so it is worked out once per minute
+let baseMemo={min:null,at:null};
+function baseAt(){
+  const min=Math.floor(clockNow()/60e3);
+  if(baseMemo.min!==min)baseMemo={min,at:onElectionNight(NIGHT.baseline)?etTs(ELECTION_DAY,NIGHT.baseline):etTs(etDate(),0)};
+  return baseMemo.at;
+}
 const baseLabel=()=>onElectionNight(NIGHT.baseline)?"6pm":"12am";
 // Which side leads for a tracked value v (Democratic share, or chance the Republican loses).
 function sideOf(r,v){return v>=0.5?(r.multi?(r.outs.find(o=>o.party!=="R")?.party==="I"?"I":"D"):"D"):"R"}

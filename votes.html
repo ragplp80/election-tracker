@@ -128,7 +128,6 @@ const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v)
 const n0=v=>Math.round(v).toLocaleString("en-US");
 const tm=t=>new Date(t).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
 const day=t=>new Date(t).toLocaleDateString([], {weekday:"short"});
-const last=a=>a[a.length-1];
 
 let data=null,odds=new Map(),lastAt=null,busy=false,openAll=new Set();
 // Drops after this time count as new (the last time you had the page open)

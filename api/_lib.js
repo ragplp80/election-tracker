@@ -2,7 +2,9 @@
 const Core = require("../core.js");
 
 const KALSHI = "https://api.elections.kalshi.com/trade-api/v2";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Retry pauses are multiplied by timing.scale (tests set it to 0 so failure paths run instantly)
+const timing = { scale: 1 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms * timing.scale));
 
 // GET a Kalshi path, retrying when Kalshi says "too many requests" or has a hiccup.
 async function kget(path, { retries = 4 } = {}) {
@@ -17,7 +19,7 @@ async function kget(path, { retries = 4 } = {}) {
       lastErr = e;
       if (/HTTP 4(?!29)/.test(String(e.message))) throw e;
     }
-    await sleep(300 * 2 ** (attempt - 1) + Math.random() * 200);
+    if (attempt < retries) await sleep(300 * 2 ** (attempt - 1) + Math.random() * 200);   // no pause after the last try
   }
   throw lastErr;
 }
@@ -226,4 +228,4 @@ async function refreshPrices(cat, { chunk = 100 } = {}) {
 // Let work finish after the response has been sent (Vercel), or just run it (elsewhere)
 function later(job) { try { vercelFns?.waitUntil?.(job); } catch (e) {} return job; }
 
-module.exports = { later, runtimeCache, kget, kgetEvents, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };
+module.exports = { timing, later, runtimeCache, kget, kgetEvents, pool, buildCatalog, getCatalog, resetCatalogCache, refreshPrices, coverageOf, KALSHI };

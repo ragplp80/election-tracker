@@ -231,7 +231,7 @@ async function ballotsLeft(results, now) {
 // How the ballots left might split. Where we know each county's votes so far, each county's ballots
 // split like that county has voted (where the ballots are matters more than anything else); the
 // rest split like the district's votes so far.
-function project(cands, history, left) {
+function project(cands, left) {
   if (!cands || cands.length < 2 || !left || !(left.est > 0)) return null;
   const total = cands.reduce((s, c) => s + c.votes, 0);
   if (!total) return null;
@@ -302,7 +302,7 @@ async function check(now = Date.now()) {
       error: cur?.error || null, cands, total: cands ? cands.reduce((s, c) => s + c.votes, 0) : null,
       reporting: cur?.reporting || null, asOf: cur?.asOf || null, source: cur?.url || null,
       parties: cands ? Object.fromEntries(cands.map((c) => [c.name, c.party])) : null,
-      left, projection: left && !left.error ? project(cands, history, left) : null,
+      left, projection: left && !left.error ? project(cands, left) : null,
       history };
   });
 }

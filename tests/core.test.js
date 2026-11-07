@@ -37,7 +37,7 @@ test("keeps only 2026 events (Kentucky governor 2027 is out)", () => {
 });
 
 test("one key per race, so duplicate series collapse", () => {
-  assert.equal(Core.seriesKey(Core.classify("SENATEAK")), Core.seriesKey(Core.classify("KXSENATEAK")));
+  assert.equal(Core.seatKey(Core.classify("SENATEAK")), Core.seatKey(Core.classify("KXSENATEAK")));
   assert.equal(Core.seatKey(Core.classify("SENATEOH")), Core.seatKey(Core.classify("SENATEOHS")), "Ohio has one Senate seat up (the special)");
 });
 
@@ -52,7 +52,7 @@ test("person markets are recognized as backups that party markets outrank", () =
   assert.deepEqual(Core.classify("KXGOVCA"), { type: "gov", st: "CA", pref: 0 });
   assert.deepEqual(Core.classify("KXCA11PERSON"), { type: "house", st: "CA", dist: 11, pref: 0 });
   assert.equal(Core.classify("KXALASKAHOUSE").dist, 0);
-  assert.equal(Core.seriesKey(Core.classify("KXMISENATE")), Core.seriesKey(Core.classify("SENATEMI")));
+  assert.equal(Core.seatKey(Core.classify("KXMISENATE")), Core.seatKey(Core.classify("SENATEMI")));
   for (const t of ["KXGOVCANOMD", "KXGOVWINS", "KXSAOPAULOSENATE", "KXSENATEILD", "KXGOVSENDIFF"]) assert.equal(Core.classify(t), null, t);
 });
 
@@ -71,7 +71,7 @@ test("a multi-district series is read district by district", () => {
   assert.equal(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-AKAL-26" }).dist, 0);
   assert.equal(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-XX03-26" }), null, "unknown state");
   assert.ok(Core.is2026(meta, { event_ticker: "KXHOUSERACE-NC03-26" }));
-  assert.equal(Core.seriesKey(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-PA07-26" })), Core.seriesKey(Core.classify("HOUSEPA7")), "same race as the dedicated series");
+  assert.equal(Core.seatKey(Core.eventMeta(meta, { event_ticker: "KXHOUSERACE-PA07-26" })), Core.seatKey(Core.classify("HOUSEPA7")), "same race as the dedicated series");
 });
 
 test("the 2026 seat list: 435 House, 35 Senate, 36 governors, and what counts as a seat", () => {

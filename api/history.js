@@ -7,15 +7,22 @@ const { kget, runtimeCache } = require("./_lib.js");
 
 const KEEP = { 1: 3 * 86400, 60: 60 * 86400, 1440: 3 * 365 * 86400 };   // how far back each resolution is kept
 const SAFE = /^[A-Z0-9][A-Z0-9.\-]{0,80}$/i;
-const mem = new Map();                                                  // this instance's copy (and the store in tests)
+// This instance's copy (and the store in tests). Capped, least recently used out first, so a
+// long-lived instance doesn't hold every market's candles forever; the shared cache keeps them all.
+const mem = new Map(), MEM_MAX = 300;
+function remember(key, v) {
+  mem.delete(key);
+  mem.set(key, v);
+  if (mem.size > MEM_MAX) mem.delete(mem.keys().next().value);
+}
 
 async function load(key) {
-  if (mem.has(key)) return mem.get(key);
-  try { const v = await runtimeCache()?.get(key); if (v) { mem.set(key, v); return v; } } catch (e) {}
+  if (mem.has(key)) { const v = mem.get(key); remember(key, v); return v; }
+  try { const v = await runtimeCache()?.get(key); if (v) { remember(key, v); return v; } } catch (e) {}
   return null;
 }
 async function save(key, v) {
-  mem.set(key, v);
+  remember(key, v);
   try { await runtimeCache()?.set(key, v, { ttl: 7 * 86400, name: "price history" }); } catch (e) {}
 }
 // Compact candle: [end_ts, close, previous, bid close, ask close]

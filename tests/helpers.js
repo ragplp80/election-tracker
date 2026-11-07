@@ -6,6 +6,8 @@ const { JSDOM } = require("jsdom");
 
 const ROOT = path.join(__dirname, "..");
 const KALSHI = "https://api.elections.kalshi.com/trade-api/v2";
+// Retry pauses (Kalshi backoff) take no real time in tests; the retry logic itself still runs.
+require("../api/_lib.js").timing.scale = 0;
 
 // ---------- Fixture builders ----------
 function market(ticker, name, p, { vol24 = 60000, prev = p } = {}) {

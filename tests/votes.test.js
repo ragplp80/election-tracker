@@ -180,13 +180,13 @@ test("votes left: each county's ballots split like that county has voted so far"
   const cands = [{ name: "A", votes: 6000 }, { name: "B", votes: 5000 }];
   // 1,000 left in a county voting 80% B, 1,000 in one voting 50/50, 500 with no county split
   const left = { est: 2500, parts: [{ est: 1000, split: { A: 0.2, B: 0.8 } }, { est: 1000, split: { A: 0.5, B: 0.5 } }, { est: 500 }] };
-  const p = votes.project(cands, [], left);
+  const p = votes.project(cands, left);
   assert.equal(p.basis, "county");
   assert.equal(Math.round(p.final.A), 6000 + 200 + 500 + 273, "the last 500 split like the race so far (6/11)");
   assert.equal(p.leader, "A");
   assert.equal(Math.round(p.margin), 445, "6,972.7 vs 6,527.3");
   assert.equal(+(p.needs * 100).toFixed(1), 70, "B needs (2,500 + 1,000) / 5,000 of the two-way votes left");
-  assert.ok(votes.project(cands, [], { est: 100 }).needs > 1, "B can't make up 1,000 votes out of 100");
+  assert.ok(votes.project(cands, { est: 100 }).needs > 1, "B can't make up 1,000 votes out of 100");
 });
 
 test("Vote Drops page: each card shows the votes left, what the trailing candidate needs, and the projected margin", async (t) => {
