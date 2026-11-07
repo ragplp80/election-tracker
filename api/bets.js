@@ -36,16 +36,9 @@ function readPositions() {
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 
-// What one contract on your side is worth right now, in dollars (0 to 1).
-// Settled markets pay 1 or 0. Otherwise: the bid/ask midpoint when the spread is tight,
-// else the last trade, so a thin market doesn't swing the board on one stale quote.
+// What one contract on your side is worth right now, in dollars (0 to 1); see Board.yesPrice.
 function sideValue(m, side) {
-  if (!m) return null;
-  if (m.result === "yes" || m.result === "no") return m.result === side ? 1 : 0;
-  const bid = num(m.yes_bid_dollars), ask = num(m.yes_ask_dollars), last = num(m.last_price_dollars);
-  let yes = null;
-  if (bid != null && ask != null && ask > 0 && ask - bid <= 0.1) yes = (bid + ask) / 2;
-  else yes = last ?? bid ?? ask;
+  const yes = Board.yesPrice(m);
   if (yes == null) return null;
   return side === "yes" ? yes : 1 - yes;
 }

@@ -20,6 +20,19 @@ function stateOf(eventTicker) {
   return null;
 }
 
+// ---------- Pricing ----------
+// A market's YES price now (0 to 1): settled markets pay 1 or 0; otherwise the bid/ask midpoint when
+// the spread is tight, else the last trade, so a thin market doesn't swing the board on one stale
+// quote. (Ladder rungs use ladderPrice below, which trusts a wider spread.)
+function yesPrice(m) {
+  if (!m) return null;
+  if (m.result === "yes") return 1;
+  if (m.result === "no") return 0;
+  const bid = num(m.yes_bid_dollars), ask = num(m.yes_ask_dollars), last = num(m.last_price_dollars);
+  if (bid != null && ask != null && ask > 0 && ask - bid <= 0.1) return (bid + ask) / 2;
+  return last ?? bid ?? ask;
+}
+
 // ---------- Selling now ----------
 // Kalshi's trading fee: 7% of price x (1 - price) per contract, rounded up to the cent per order.
 const feeFor = (n, p) => Math.ceil(0.07 * n * p * (1 - p) * 100 - 1e-9) / 100;
@@ -190,14 +203,6 @@ async function nightHistory(rows, markets, legMarkets, rangeKey, getHistory, poo
   for (let t = start; t < now; t += R.step) times.push(t);
   times.push(now);
 
-  const yesNow = (m) => {
-    if (!m) return null;
-    if (m.result === "yes") return 1;
-    if (m.result === "no") return 0;
-    const bid = num(m.yes_bid_dollars), ask = num(m.yes_ask_dollars), last = num(m.last_price_dollars);
-    if (bid != null && ask != null && ask > 0 && ask - bid <= 0.1) return (bid + ask) / 2;
-    return last ?? bid ?? ask;
-  };
   const want = new Map();   // ticker -> market
   for (const r of rows) {
     if (r.legs) for (const l of r.legs) { const lm = legMarkets.get(l.ticker); if (lm) want.set(l.ticker, lm); }
@@ -212,7 +217,7 @@ async function nightHistory(rows, markets, legMarkets, rangeKey, getHistory, poo
   tickers.forEach((t, i) => {
     const c = fetched[i] && !fetched[i].error ? fetched[i] : null;
     if (!c || !c.length) missing.push(t);
-    yesSeries.set(t, onTimeline(c || [], times, yesNow(want.get(t))));
+    yesSeries.set(t, onTimeline(c || [], times, yesPrice(want.get(t))));
   });
 
   const r3 = (v) => (v == null ? null : Math.round(v * 1000) / 1000);
@@ -239,4 +244,4 @@ async function nightHistory(rows, markets, legMarkets, rangeKey, getHistory, poo
   };
 }
 
-module.exports = { stateOf, sellNow, feeFor, ladderPrice, nonIncreasing, crossing, buildLine, counterpartEvent, nightHistory, onTimeline, RANGES };
+module.exports = { yesPrice, stateOf, sellNow, feeFor, ladderPrice, nonIncreasing, crossing, buildLine, counterpartEvent, nightHistory, onTimeline, RANGES };
